@@ -1,6 +1,6 @@
 {
   "name": "orca-orchestrator",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Issue-delivery tooling and skills for Orca-managed repositories: leases, worktrees, dispatch, independent head verification and ChatGPT review, configured per repository.",
   "type": "module",
   "bin": {

@@ -25,3 +25,30 @@ describe("skills install", () => {
     expect(checkSkills(dir)).toEqual({ ok: false, dir, missing: ["orca-fleet"], differing: ["orca-flow"] });
   });
 });
+
+describe("skills install in a linked worktree", () => {
+  it("writes into the worktree it runs in, not the main checkout", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const { existsSync, mkdirSync, realpathSync } = await import("node:fs");
+    const bin = join(process.cwd(), "bin", "orca-orchestrator.mjs");
+    const main = realpathSync(mkdtempSync(join(tmpdir(), "wt-install-")));
+    const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
+    try {
+      git(main, "init", "-q", "-b", "main");
+      git(main, "config", "user.email", "t@example.com");
+      git(main, "config", "user.name", "t");
+      writeFileSync(join(main, "a.txt"), "a");
+      git(main, "add", "a.txt");
+      git(main, "commit", "-q", "-m", "init");
+      mkdirSync(join(main, ".worktrees"));
+      const wt = join(main, ".worktrees", "issue-1");
+      git(main, "worktree", "add", "-q", "-b", "agent/issue-1", wt);
+      const out = JSON.parse(execFileSync("node", [bin, "install-skills"], { cwd: wt, encoding: "utf8" }));
+      expect(realpathSync(out.dir)).toBe(join(wt, ".agents", "skills"));
+      expect(existsSync(join(wt, ".agents", "skills", "orca-flow", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(main, ".agents"))).toBe(false);
+    } finally {
+      rmSync(main, { recursive: true, force: true });
+    }
+  });
+});
