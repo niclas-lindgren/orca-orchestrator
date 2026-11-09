@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { classify } from "../src/auto/authority.mjs";
+import { classify, configuredDomains } from "../src/auto/authority.mjs";
 import { FILE_LIMIT } from "../src/auto/authcheck.mjs";
 import { runCommand } from "../src/auto/cli.mjs";
 import { openState, parkForFounder } from "../src/auto/state.mjs";
@@ -11,6 +11,10 @@ import { openState, parkForFounder } from "../src/auto/state.mjs";
 const issue = (over: object = {}) => ({ number: 9, state: "OPEN", title: "Tidy the booking list", body: "Do it.\n\n## Acceptance\n- it works\n", labels: [{ name: "auto:eligible" }, { name: "priority: P2" }], comments: [], ...over });
 
 describe("campsty-auto authority classifier", () => {
+  it("exposes the repository's configured domains through the public authority facade", () => {
+    expect(configuredDomains().map((domain) => domain.id)).toContain("payments");
+  });
+
   it("lets an ordinary issue through and reports nothing", () => {
     expect(classify({ issue: issue(), files: ["src/components/BookingList.tsx", "tests/unit/booking-list.test.tsx"] })).toMatchObject({ result: "CLEAR", domains: [], strong: [], weak: [] });
   });

@@ -15,6 +15,9 @@ import { activeConfig } from "../config.mjs";
 
 export const RESULTS = ["CLEAR", "FOUNDER_APPROVED", "REQUIRES_FOUNDER", "CHECK_UNAVAILABLE"];
 
+/** Public read-only view for repository tools that share the configured authority policy. */
+export const configuredDomains = () => activeConfig().protectedDomains;
+
 const labelNames = (issue) => (issue.labels ?? []).map((l) => String(typeof l === "string" ? l : l.name).toLowerCase());
 const excerpt = (text, match) => {
   const start = Math.max(0, match.index - 30);
