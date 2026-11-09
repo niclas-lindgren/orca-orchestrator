@@ -119,6 +119,15 @@ let active = null;
 export function setActiveConfig(config) {
   active = config;
 }
+
+/** Load and activate the config visible from a repository checkout or linked worktree. */
+export function activateRepositoryConfig(cwd = process.cwd()) {
+  const repoRoot = resolveRepoRoot(cwd);
+  const config = loadConfig(resolveConfigRoot(cwd, repoRoot), { repoRoot });
+  setActiveConfig(config);
+  return config;
+}
+
 export function activeConfig() {
   if (!active) throw new ConfigError("CONFIG_NOT_LOADED", "no orca config is active; load one with loadConfig() first");
   return active;

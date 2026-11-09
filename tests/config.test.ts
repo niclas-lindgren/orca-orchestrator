@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConfigError, normalizeConfig, requireSetting, setActiveConfig } from "../src/config.mjs";
+import { activateRepositoryConfig, ConfigError, normalizeConfig, requireSetting, setActiveConfig } from "../src/config.mjs";
 import { classify } from "../src/auto/authority.mjs";
 
 describe("config", () => {
@@ -43,6 +43,19 @@ describe("config", () => {
 });
 
 describe("config root", () => {
+  it("can load and activate the config visible from a checkout", async () => {
+    const { mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = mkdtempSync(join(tmpdir(), "orca-config-"));
+    try {
+      writeFileSync(join(root, "orca.config.json"), JSON.stringify({ defaultBranch: "trunk" }));
+      expect(activateRepositoryConfig(root).defaultBranch).toBe("trunk");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("prefers a linked worktree's own config and keeps state in the main checkout", async () => {
     const { execFileSync } = await import("node:child_process");
     const { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } = await import("node:fs");
