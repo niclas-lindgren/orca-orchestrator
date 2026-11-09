@@ -61,7 +61,7 @@ function compileDomain(def, index) {
       id: def.id,
       labels: list("labels").map((l) => l.toLowerCase()),
       words: words.length ? stemPattern(words) : /(?!)/u,
-      paths: paths.map((p) => new RegExp(p)),
+      paths: paths.map((p) => new RegExp(p, "i")),
     };
   } catch (error) {
     throw new ConfigError("CONFIG_INVALID", `${where} has an invalid pattern: ${error.message}`);

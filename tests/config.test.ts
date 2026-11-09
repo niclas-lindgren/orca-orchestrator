@@ -38,6 +38,7 @@ describe("config", () => {
     expect(classify({ issue: { title: "x", labels: [{ name: "billing" }], comments: [] } }).domains).toEqual(["billing"]);
     expect(classify({ issue: { title: "Fix invoice rounding", labels: [], comments: [] } }).domains).toEqual(["billing"]);
     expect(classify({ issue: { title: "x", labels: [], comments: [] }, files: ["src/billing/a.ts"] }).domains).toEqual(["billing"]);
+    expect(classify({ issue: { title: "x", labels: [], comments: [] }, files: ["SRC/BILLING/A.TS"] }).domains).toEqual(["billing"]);
     expect(classify({ issue: { title: "x", body: "mentions an invoice", labels: [], comments: [] } })).toMatchObject({ result: "CLEAR" });
   });
 });

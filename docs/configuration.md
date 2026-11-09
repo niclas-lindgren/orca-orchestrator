@@ -28,7 +28,9 @@ tools and skills hold no repository-specific constants. Create a starter with `o
 signal: `auth-check` returns `REQUIRES_FOUNDER`, parks the issue and releases the lease. A `words`
 match only in the body or comments is weak: reported, but the result stays `CLEAR`. `words` are regex
 stems matched at a word boundary, case-insensitively. Approval is never inferred from a comment or a
-label; the coordinating session records the user's in-chat approval with `founder-resume`.
+label; the coordinating session records the user's in-chat approval with `founder-resume`. Path
+patterns are also matched case-insensitively so authorization behavior does not depend on checkout
+path casing.
 
 ## Example
 
