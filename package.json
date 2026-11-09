@@ -1,0 +1,26 @@
+{
+  "name": "orca-orchestrator",
+  "version": "0.1.0",
+  "description": "Issue-delivery tooling and skills for Orca-managed repositories: leases, worktrees, dispatch, independent head verification and ChatGPT review, configured per repository.",
+  "type": "module",
+  "bin": {
+    "orca-orchestrator": "bin/orca-orchestrator.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skills",
+    "docs"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "check": "node --check bin/orca-orchestrator.mjs && vitest run"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0",
+    "vitest": "^3.2.0"
+  }
+}

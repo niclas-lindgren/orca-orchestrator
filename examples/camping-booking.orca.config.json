@@ -1,0 +1,132 @@
+{
+  "repo": "niclas-lindgren/camping-booking",
+  "defaultBranch": "main",
+  "gate": {
+    "command": "npm",
+    "args": [
+      "run",
+      "verify"
+    ]
+  },
+  "review": {
+    "projectId": "g-p-6a3f627992648191a41d0b2097584655",
+    "projectName": "Campsty"
+  },
+  "workerInstructions": [
+    "Follow docs/agents/workflow.md, repository.md and testing.md."
+  ],
+  "protectedDomains": [
+    {
+      "id": "pricing-fees-refunds",
+      "labels": [
+        "pricing"
+      ],
+      "words": [
+        "pric(?:e|es|ing)",
+        "fees?",
+        "refund",
+        "cancellation polic",
+        "cancellation rule",
+        "pris(?:er|sättning)?(?![\\p{L}])",
+        "avgift",
+        "återbetal",
+        "avbokningsregl",
+        "avbokningspolicy"
+      ],
+      "paths": [
+        "^src\\/(?:lib|app\\/api)\\/.*(?:pricing|cancel|refund)"
+      ]
+    },
+    {
+      "id": "payments",
+      "labels": [
+        "payments",
+        "area:payments"
+      ],
+      "words": [
+        "payments?",
+        "stripe",
+        "checkout",
+        "payouts?",
+        "invoice",
+        "betalning",
+        "utbetalning",
+        "faktura"
+      ],
+      "paths": [
+        "^src\\/lib\\/(?:payments|billing-documents)\\/",
+        "^src\\/lib\\/[\\w-]*(?:payment|payout|stripe|checkout)",
+        "^src\\/app\\/api\\/(?:stripe|webhooks|checkout)\\/",
+        "^src\\/app\\/\\[locale\\]\\/(?:admin\\/(?:payments|billing)|owner\\/payouts)\\/"
+      ]
+    },
+    {
+      "id": "identity-tenant",
+      "labels": [
+        "area:auth"
+      ],
+      "words": [
+        "authenticat",
+        "authoriz",
+        "authoris",
+        "permissions?",
+        "tenants?",
+        "sign-?in",
+        "login",
+        "behörighet",
+        "inloggning",
+        "hyresgäst"
+      ],
+      "paths": [
+        "^src\\/proxy[\\w-]*\\.ts$",
+        "^src\\/lib\\/(?:auth[\\w-]*|require-auth|access-grants[\\w-]*|guest-booking-access|roles|permissions?)(?:\\.|\\/)",
+        "^src\\/app\\/api\\/(?:auth|admin\\/(?:access-grants|impersonate))\\/",
+        "^src\\/app\\/\\[locale\\]\\/(?:auth|admin\\/access-grants)\\/"
+      ]
+    },
+    {
+      "id": "privacy-legal",
+      "labels": [
+        "compliance",
+        "privacy"
+      ],
+      "words": [
+        "privacy",
+        "gdpr",
+        "personal data",
+        "consent",
+        "legal",
+        "terms of",
+        "data processing",
+        "integritet",
+        "samtycke",
+        "personuppgift",
+        "villkor"
+      ],
+      "paths": [
+        "^src\\/lib\\/(?:privacy|legal|dsar|breach)\\/",
+        "^src\\/lib\\/cookie-consent\\.",
+        "^src\\/app\\/api\\/(?:privacy|dsar|legal|breach)\\/",
+        "^src\\/app\\/api\\/owner\\/(?:consents|dpa-acceptance|merchant-agreement-acceptance|data|cancel-account)\\/"
+      ]
+    },
+    {
+      "id": "irreversible",
+      "labels": [
+        "risk:high"
+      ],
+      "words": [
+        "irreversible",
+        "drop table",
+        "delete (?:all )?(?:production )?data",
+        "production migration",
+        "go-live",
+        "oåterkallelig"
+      ],
+      "paths": [
+        "^prisma\\/migrations\\/",
+        "^prisma\\/schema\\.prisma$"
+      ]
+    }
+  ]
+}
