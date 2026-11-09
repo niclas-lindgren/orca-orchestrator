@@ -1,8 +1,21 @@
 {
   "name": "orca-orchestrator",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Issue-delivery tooling and skills for Orca-managed repositories: leases, worktrees, dispatch, independent head verification and ChatGPT review, configured per repository.",
   "type": "module",
+  "keywords": [
+    "pi-package",
+    "orca",
+    "agent-orchestration"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/orca.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
   "exports": {
     "./authority": {
       "types": "./src/auto/authority.d.ts",
@@ -18,12 +31,18 @@
   },
   "files": [
     "bin",
+    "extensions",
     "src",
     "skills",
-    "docs"
+    "docs",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "scripts": {
     "test": "vitest run",

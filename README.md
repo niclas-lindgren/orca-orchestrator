@@ -8,7 +8,9 @@ issue, claimed worktrees, a protected-domain authority check, a repair ledger wi
 one supervised worker per issue, independent final-head verification, worktree cleanup, and a guarded
 ChatGPT review browser (open, send, wait, read, delete-only-what-you-sent).
 
-**Skills** (`skills/`):
+**Pi extension** (`extensions/orca.ts`): the read-only `orca_status` tool and
+`/orca-status [issue]` command expose lease/run inspection inside Pi. The same
+Pi package also loads the canonical skills below.
 
 | Skill | Use |
 |---|---|
@@ -31,6 +33,6 @@ can fail a test that names the rule it would weaken.
 
 ## Status
 
-v0.1: extracted from the per-repository copies in two projects. Not yet covered: the `orca-deliver`
-pilot skill (kept in the originating repository), and a stricter provenance check that ties
+v0.2: shared CLI, Pi extension, and canonical flow/fleet skills are consumed by multiple
+repositories. A future hardening opportunity is a stricter provenance check that ties
 `review-delete` to the conversation id returned by `review-send`.
