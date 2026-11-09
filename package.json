@@ -1,11 +1,17 @@
 {
   "name": "orca-orchestrator",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Issue-delivery tooling and skills for Orca-managed repositories: leases, worktrees, dispatch, independent head verification and ChatGPT review, configured per repository.",
   "type": "module",
   "exports": {
-    "./authority": "./src/auto/authority.mjs",
-    "./config": "./src/config.mjs"
+    "./authority": {
+      "types": "./src/auto/authority.d.ts",
+      "default": "./src/auto/authority.mjs"
+    },
+    "./config": {
+      "types": "./src/config.d.ts",
+      "default": "./src/config.mjs"
+    }
   },
   "bin": {
     "orca-orchestrator": "bin/orca-orchestrator.mjs"
