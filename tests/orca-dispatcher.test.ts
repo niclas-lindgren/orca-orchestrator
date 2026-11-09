@@ -31,7 +31,7 @@ function world(opts: { issues?: Issue[]; closed?: number[]; prs?: number[]; verd
   const exec = (command: string, args: string[]) => {
     const flag = (name: string) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : undefined) as string;
     if (command === "node") {
-      const sub = args[1];
+      const sub = args[2]; // the fake mirrors the real argv shape: node <bin> auto <sub> ...
       state.calls.push(`auto ${sub}`);
       if (sub === "status") {
         const issue = flag("issue");
@@ -278,7 +278,7 @@ describe("dispatcher tick", () => {
     run(w);
     w.state.issues.push(ready(6));
     const inner = w.exec as unknown as (c: string, a: string[]) => { status: number; stdout: string; stderr: string };
-    const failing = ((c: string, a: string[]) => (c === "node" && a[1] === "renew" ? { status: 1, stdout: "", stderr: "boom" } : inner(c, a))) as never;
+    const failing = ((c: string, a: string[]) => (c === "node" && a[2] === "renew" ? { status: 1, stdout: "", stderr: "boom" } : inner(c, a))) as never;
     const report = tick({ repoRoot, stateDir, exec: failing, now: () => NOW, newRunId: () => "run-x" });
     expect(report.outcome).toBe("RECONCILE_UNRELIABLE");
     expect(w.state.workers).toHaveLength(1);

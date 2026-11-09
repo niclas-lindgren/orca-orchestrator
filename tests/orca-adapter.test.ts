@@ -1,4 +1,4 @@
-import { AUTO_CLI } from "../src/paths.mjs";
+import { AUTO_COMMAND } from "../src/paths.mjs";
 import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -99,7 +99,7 @@ describe("orca adapter", () => {
     expect(plan.commands.authCheck).toEqual(
       expect.arrayContaining(["auth-check", "--issue", "1059", "--phase", "plan", "--owner", owner, "--run", runId]),
     );
-    expect(plan.commands.authCheck[1]).toBe(AUTO_CLI);
+    expect(plan.commands.authCheck.slice(0, 3)).toEqual([...AUTO_COMMAND]);
     expect(plan.recordFile).toBe(recordPath());
   });
 

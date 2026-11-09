@@ -3,7 +3,7 @@
 1. Add the package, pinned to a tag or commit so upgrades are deliberate:
 
    ```bash
-   npm install --save-dev github:niclas-lindgren/orca-orchestrator#v0.1.0
+   npm install --save-dev git+https://github.com/niclas-lindgren/orca-orchestrator.git#v0.1.3
    ```
 
 2. Add the two entry points the skills call, to `package.json`:
@@ -30,6 +30,8 @@
 
 5. Add `.local/` (or your `stateDir`) to `.gitignore`. The lease database is local state; if it is
    tracked, reverting a file in the checkout erases every lease.
+
+Use the `git+https` URL: the `github:` shorthand makes npm fetch over SSH, which fails in environments without GitHub SSH access.
 
 Requirements: Node >= 22.19 (built-in `node:sqlite`), `git`, `gh` (authenticated), and the Orca CLI.
 

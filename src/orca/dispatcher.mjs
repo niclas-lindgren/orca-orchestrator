@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { AUTO_CLI } from "../paths.mjs";
+import { AUTO_COMMAND } from "../paths.mjs";
 import { isPaused } from "../auto/state.mjs";
 import { buildDispatchPlan, dispatch, leaseHeldBy } from "./adapter.mjs";
 
@@ -215,8 +215,8 @@ function workerStatus(workers, worktree) {
  * and nothing new may be dispatched on that tick.
  */
 export function reconcile({ repoRoot, stateDir, exec, now }) {
-  const auto = ["node", AUTO_CLI];
-  const lease = execJson(exec, auto[0], [auto[1], "status"], repoRoot);
+  const auto = [...AUTO_COMMAND];
+  const lease = execJson(exec, auto[0], [...auto.slice(1), "status"], repoRoot);
   const workersRead = execJson(exec, "orca", ["orchestration", "worker-list", "--include-remote", "--json"], repoRoot);
   const reliable = lease.ok && workersRead.ok;
   const leases = lease.ok ? (lease.value.runs ?? []) : [];
@@ -350,20 +350,20 @@ export function tick({ repoRoot, stateDir, exec = defaultExec, now = Date.now, n
   try {
     const recon = reconcile({ repoRoot, stateDir, exec, now: at });
     const errors = [...recon.errors];
-    const auto = ["node", AUTO_CLI];
+    const auto = [...AUTO_COMMAND];
 
     // Renewing keeps a live worker's lease from expiring under it. An orphan claim
     // (no dispatch record) never reached a start, so an expired one is safe to free.
     let renewalFailed = false;
     for (const worker of recon.buckets.active) {
-      const renewed = execJson(exec, auto[0], [auto[1], "renew", "--issue", String(worker.issue), "--owner", worker.owner, "--run", worker.runId, "--ttl-min", String(config.leaseTtlMin)], repoRoot);
+      const renewed = execJson(exec, auto[0], [...auto.slice(1), "renew", "--issue", String(worker.issue), "--owner", worker.owner, "--run", worker.runId, "--ttl-min", String(config.leaseTtlMin)], repoRoot);
       if (!renewed.ok) {
         renewalFailed = true;
         errors.push(`renew #${worker.issue}: ${renewed.error}`);
       }
     }
     for (const orphan of recon.expiredOrphans) {
-      execJson(exec, auto[0], [auto[1], "release", "--issue", String(orphan.issue), "--owner", orphan.owner, "--run", orphan.run_id], repoRoot);
+      execJson(exec, auto[0], [...auto.slice(1), "release", "--issue", String(orphan.issue), "--owner", orphan.owner, "--run", orphan.run_id], repoRoot);
     }
 
     if (!recon.reliable || renewalFailed) return finish("RECONCILE_UNRELIABLE", { recon, errors });
@@ -395,13 +395,13 @@ export function tick({ repoRoot, stateDir, exec = defaultExec, now = Date.now, n
       }
       recordAttempt(stateDir, day);
       const runId = newRunId();
-      const claim = execJson(exec, auto[0], [auto[1], "claim", "--issue", String(candidate.issue), "--owner", config.owner, "--run", runId, "--ttl-min", String(config.leaseTtlMin)], repoRoot);
+      const claim = execJson(exec, auto[0], [...auto.slice(1), "claim", "--issue", String(candidate.issue), "--owner", config.owner, "--run", runId, "--ttl-min", String(config.leaseTtlMin)], repoRoot);
       if (!claim.ok) {
         skipped.push({ issue: candidate.issue, reason: "claim refused" });
         continue;
       }
       const plan = buildDispatchPlan({ issue: candidate.issue, title: candidate.title, owner: config.owner, runId, repoRoot, stateDir, agent: config.agent });
-      const readLeaseRuns = () => execJson(exec, auto[0], [auto[1], "status", "--issue", String(candidate.issue)], repoRoot).value?.runs ?? [];
+      const readLeaseRuns = () => execJson(exec, auto[0], [...auto.slice(1), "status", "--issue", String(candidate.issue)], repoRoot).value?.runs ?? [];
       const receipt = dispatch(plan, { exec, cwd: plan.worktree, readLeaseRuns, now });
       if (receipt.ok) {
         dispatched.push({ issue: candidate.issue, runId });
@@ -412,7 +412,7 @@ export function tick({ repoRoot, stateDir, exec = defaultExec, now = Date.now, n
       // unrelated work stay eligible. With a record, the start is ambiguous and the
       // lease and record stay for the operator.
       if (!existsSync(plan.recordFile)) {
-        execJson(exec, auto[0], [auto[1], "release", "--issue", String(candidate.issue), "--owner", config.owner, "--run", runId], repoRoot);
+        execJson(exec, auto[0], [...auto.slice(1), "release", "--issue", String(candidate.issue), "--owner", config.owner, "--run", runId], repoRoot);
         const reason = receipt.code === "AUTHORITY_NOT_PERMITTED" ? `awaiting founder (${receipt.verdict ?? "unknown"})` : receipt.code;
         skipped.push({ issue: candidate.issue, reason });
         if (receipt.code === "ORCA_UNREACHABLE") break;

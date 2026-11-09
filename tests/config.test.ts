@@ -74,3 +74,24 @@ describe("config root", () => {
     }
   });
 });
+
+describe("the commands the Orca tools shell out to", () => {
+  it("run for real: the generated lease-status command prints JSON", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const { mkdtempSync, realpathSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { buildDispatchPlan } = await import("../src/orca/adapter.mjs");
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "realcmd-")));
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+      writeFileSync(join(repo, "orca.config.json"), JSON.stringify({ gate: { command: "true", args: [] } }));
+      const plan = buildDispatchPlan({ issue: 7, title: "t", owner: "o", runId: "r", repoRoot: repo, stateDir: join(repo, ".local/auto") });
+      const [command, ...args] = plan.commands.leaseStatus;
+      const out = execFileSync(command, args, { cwd: repo, encoding: "utf8" });
+      expect(JSON.parse(out)).toMatchObject({ ok: true, runs: [] });
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});

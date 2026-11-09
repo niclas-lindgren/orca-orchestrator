@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { requireSetting, activeConfig } from "../config.mjs";
-import { AUTO_CLI } from "../paths.mjs";
+import { AUTO_COMMAND } from "../paths.mjs";
 import { branchFor, worktreePathFor } from "../auto/worktrees.mjs";
 
 const TERMINAL_STATES = ["COMPLETE", "PARKED", "FAILED"];
@@ -31,7 +31,7 @@ export function buildDispatchPlan({ issue, title, owner, runId, repoRoot, stateD
   const worktree = worktreePathFor(repoRoot, issue);
   const branch = branchFor(issue);
   const spec = buildTaskSpec({ issue, title, branch, worktree });
-  const auto = ["node", AUTO_CLI];
+  const auto = [...AUTO_COMMAND];
   return {
     issue,
     owner,
