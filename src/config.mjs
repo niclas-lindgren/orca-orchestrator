@@ -31,6 +31,17 @@ export function resolveRepoRoot(cwd = process.cwd()) {
   return common.endsWith("/.git") ? dirname(common) : resolve(cwd);
 }
 
+/**
+ * Where to read the config from. The config is versioned with the branch, so a linked worktree's own
+ * copy wins (a config change can be exercised in its own PR); otherwise the main checkout's is used.
+ * Leases, worktrees and dispatch records always stay in the main checkout (`resolveRepoRoot`).
+ */
+export function resolveConfigRoot(cwd = process.cwd(), repoRoot = resolveRepoRoot(cwd)) {
+  const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8" });
+  const here = top.status === 0 ? top.stdout.trim() : null;
+  return here && existsSync(join(here, CONFIG_FILE)) ? here : repoRoot;
+}
+
 const stemPattern = (stems) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${stems.join("|")})`, "iu");
 
 function compileDomain(def, index) {
@@ -90,8 +101,8 @@ export function normalizeConfig(raw, { repoRoot = ".", origin = null } = {}) {
   return Object.freeze(config);
 }
 
-export function loadConfig(repoRoot) {
-  const file = join(repoRoot, CONFIG_FILE);
+export function loadConfig(configRoot, { repoRoot = configRoot } = {}) {
+  const file = join(configRoot, CONFIG_FILE);
   if (!existsSync(file)) {
     throw new ConfigError("CONFIG_MISSING", `${file} not found. Create it (see docs/configuration.md in orca-orchestrator).`);
   }

@@ -41,3 +41,36 @@ describe("config", () => {
     expect(classify({ issue: { title: "x", body: "mentions an invoice", labels: [], comments: [] } })).toMatchObject({ result: "CLEAR" });
   });
 });
+
+describe("config root", () => {
+  it("prefers a linked worktree's own config and keeps state in the main checkout", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { loadConfig, resolveConfigRoot, resolveRepoRoot } = await import("../src/config.mjs");
+    const main = realpathSync(mkdtempSync(join(tmpdir(), "cfgroot-")));
+    const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
+    try {
+      git(main, "init", "-q", "-b", "main");
+      git(main, "config", "user.email", "t@example.com");
+      git(main, "config", "user.name", "t");
+      writeFileSync(join(main, "a.txt"), "a");
+      git(main, "add", "a.txt");
+      git(main, "commit", "-q", "-m", "init");
+      const wt = join(main, ".worktrees", "issue-1");
+      mkdirSync(join(main, ".worktrees"));
+      git(main, "worktree", "add", "-q", "-b", "agent/issue-1", wt);
+      // No config anywhere: the main checkout is the fallback.
+      expect(resolveConfigRoot(wt, resolveRepoRoot(wt))).toBe(main);
+      writeFileSync(join(wt, "orca.config.json"), JSON.stringify({ defaultBranch: "trunk" }));
+      expect(resolveRepoRoot(wt)).toBe(main);
+      expect(resolveConfigRoot(wt, main)).toBe(wt);
+      const config = loadConfig(resolveConfigRoot(wt, main), { repoRoot: main });
+      expect(config.defaultBranch).toBe("trunk");
+      expect(config.repoRoot).toBe(main);
+    } finally {
+      rmSync(main, { recursive: true, force: true });
+    }
+  });
+});

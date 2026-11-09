@@ -10,7 +10,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { checkSkills, installSkills } from "../src/skills.mjs";
 import { join } from "node:path";
-import { CONFIG_FILE, ConfigError, loadConfig, resolveRepoRoot, setActiveConfig } from "../src/config.mjs";
+import { CONFIG_FILE, ConfigError, loadConfig, resolveConfigRoot, resolveRepoRoot, setActiveConfig } from "../src/config.mjs";
 import { runCommand } from "../src/auto/cli.mjs";
 import { main as orcaMain } from "../src/orca/cli.mjs";
 
@@ -52,7 +52,7 @@ if (which === "init") {
   process.exitCode = receipt.ok ? 0 : 1;
 } else if (which === "auto" || which === "orca") {
   try {
-    setActiveConfig(loadConfig(repoRoot));
+    setActiveConfig(loadConfig(resolveConfigRoot(process.cwd(), repoRoot), { repoRoot }));
     const { code, result } = which === "auto" ? runCommand(rest, { repoRoot }) : orcaMain(rest, { repoRoot });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exitCode = code;
