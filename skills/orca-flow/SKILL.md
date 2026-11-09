@@ -72,7 +72,7 @@ flow. Name them in the final report. Stage files by explicit path, never `git ad
 - Otherwise list **every** open issue, unlabeled ones included:
   `gh issue list --state open --limit 200 --json number,title,labels`. Read each title before
   filtering. Do not stop after the priority-labelled subset.
-- Order the candidates by the repository's priority convention (a `P<n>` title prefix or label, P1 first, unless its instructions say otherwise). Priority orders the
+- Order the candidates by the repository's priority convention (a `P<n>` title prefix or label, or as otherwise documented in the repository's instructions). Priority orders the
   work and never excludes an issue: a lower-priority or unprioritized issue is a valid pick. Issues deferred to a later period are valid only when the user asks for them. Skip issues with
   an open blocking dependency or whose body says they wait for an external decision.
 - Before claiming a candidate, check whether its work already landed:
@@ -174,8 +174,8 @@ the PR fully delivers the issue, in which case use `Closes #<n>`.
 ## Where ChatGPT chats must live (required)
 
 Every review and consult chat this flow creates must be a chat inside the configured ChatGPT project
-(`https://chatgpt.com/g/g-p-6a6859a57a0881919c2f9a9266cec28c/c/<id>`). A chat at
-`https://chatgpt.com/c/<id>` has no project segment and is not valid, even if it was started from
+(the project URL is read from `orca.config.json` and passed to the `review-*` commands). A chat
+at `https://chatgpt.com/c/<id>` has no project segment and is not valid, even if it was started from
 the sidebar. Never type into, send to, or delete a chat the flow did not start.
 
 ## 6. Request the ChatGPT review (Orca browser)
@@ -233,7 +233,7 @@ reply yet; run `review-wait` once more, not a loop of retries.
   npm run auto -- repair-record --issue <n> --owner <agent-name> --run <run-id> --pr <pr> --head <40-char head> --findings-file <file>
   ```
 
-  `RECORDED` or `ALREADY_RECORD` allows the repair. `REPAIR_LIMIT` (a finding already repaired
+  `RECORDED` or `ALREADY_RECORDED` allows the repair. `REPAIR_LIMIT` (a finding already repaired
   from two other heads, or six repaired heads on the pull request) parks the issue and releases
   the lease: stop and report it. `STALE_HEAD`, `DIRTY_WORKTREE`, `ISSUE_BLOCKED`, `LEASE_LOST`
   and `GITHUB_UNAVAILABLE` also mean do not repair. `npm run auto -- repair-status --issue <n>`
