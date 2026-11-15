@@ -60,9 +60,15 @@ by frequency and highest severity, with investigation hypotheses labeled
 - If local learning persistence fails, it must not affect worktree/lease ownership,
   authority decisions, review requirements, verification or merge eligibility.
 
+## Contract evaluation
+
+Use `orca-orchestrator learn evaluate` in the **trusted evaluator checkout** against distinct,
+clean, pinned baseline and candidate directories. See [evaluation.md](evaluation.md).
+This verifies deterministic safety/quality contracts, not agent task-delivery quality.
+
 ## Next phases
 
-1. Build independent task replay/evaluation with pinned baseline and candidate versions.
+1. Expand the pinned, deterministic contract replay into true end-to-end agent task evaluation with isolated environments, measured cost/time, and held-out safety tests.
 2. Let a separately privileged improvement agent consume proposals and open draft PRs.
 3. Keep branch protection, required checks, protected-domain authorization and evaluator
    definitions outside that agent's write access.

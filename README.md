@@ -13,6 +13,12 @@ structured run outcomes in a repository-scoped SQLite store, reports recurring r
 failures, and suggests investigations. It never runs agents, changes gates, creates issues or PRs,
 or updates its own code. See [docs/learning.md](docs/learning.md).
 
+**Replay evaluation** (`orca-orchestrator learn evaluate`): compares pinned clean baseline and
+candidate checkouts against a single trusted, bounded fixture suite. Includes regression and
+safety-case accounting, strict provenance and fails closed on mutated checkouts. This is an
+offline contract-evaluation harness, **not** an end-to-end agent productivity benchmark or
+an automatic merge authority. See [docs/evaluation.md](docs/evaluation.md).
+
 **Pi extension** (`extensions/orca.ts`): the read-only `orca_status` tool and
 `/orca-status [issue]` command expose lease/run inspection inside Pi. The same
 Pi package also loads the canonical skills below.

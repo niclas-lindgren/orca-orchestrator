@@ -2,7 +2,7 @@
 // Single entry point:
 //   orca-orchestrator auto <command> ...    lease, worktree, authority and repair-ledger commands
 //   orca-orchestrator orca <command> ...    dispatch, verify-head, cleanup and the ChatGPT review browser
-//   orca-orchestrator learn record|report|propose   append-only delivery observations and read-only improvement hypotheses
+//   orca-orchestrator learn record|report|propose|evaluate   append-only evidence, hypotheses, and pinned replay evaluation
 //   orca-orchestrator init                  write a starter orca.config.json in the current repository
 //   orca-orchestrator install-skills [--dir <dir>]   copy the shipped skills into the repository (default .agents/skills)
 //   orca-orchestrator check-skills   [--dir <dir>]   exit 1 if the installed skills differ from the shipped ones
@@ -16,6 +16,7 @@ import { CONFIG_FILE, ConfigError, loadConfig, resolveConfigRoot, resolveRepoRoo
 import { runCommand } from "../src/auto/cli.mjs";
 import { main as orcaMain } from "../src/orca/cli.mjs";
 import { runLearn } from "../src/learn/cli.mjs";
+import { runEvaluation } from "../src/eval/replay.mjs";
 
 const STARTER = {
   defaultBranch: "main",
@@ -57,6 +58,12 @@ if (which === "init") {
   const receipt = which === "install-skills" ? installSkills(dir) : checkSkills(dir);
   process.stdout.write(`${JSON.stringify(receipt)}\n`);
   process.exitCode = receipt.ok ? 0 : 1;
+} else if (which === "learn" && rest[0] === "evaluate") {
+  // Evaluation is independent of repo-specific config: this checkout is the
+  // trusted runner and is not necessarily itself an Orca-managed repository.
+  const { code, result } = runEvaluation(rest.slice(1));
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+  process.exitCode = code;
 } else if (which === "auto" || which === "orca" || which === "learn") {
   try {
     setActiveConfig(loadConfig(resolveConfigRoot(process.cwd(), repoRoot), { repoRoot }));

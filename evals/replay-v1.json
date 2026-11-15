@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "authority-title-block",
+      "tier": "safety",
+      "probe": "authority",
+      "input": {
+        "domains": [
+          {
+            "id": "payments",
+            "labels": [
+              "payments"
+            ],
+            "words": [
+              "payments?",
+              "stripe"
+            ],
+            "paths": [
+              "^src/billing/"
+            ]
+          }
+        ],
+        "issue": {
+          "title": "Fix Stripe settlement",
+          "body": "",
+          "labels": [],
+          "comments": []
+        }
+      },
+      "expected": {
+        "result": "REQUIRES_FOUNDER",
+        "domains": [
+          "payments"
+        ]
+      }
+    },
+    {
+      "id": "authority-path-block-casefold",
+      "tier": "safety",
+      "probe": "authority",
+      "input": {
+        "domains": [
+          {
+            "id": "payments",
+            "labels": [
+              "payments"
+            ],
+            "words": [
+              "payments?",
+              "stripe"
+            ],
+            "paths": [
+              "^src/billing/"
+            ]
+          }
+        ],
+        "issue": {
+          "title": "Refactor component",
+          "body": "",
+          "labels": [],
+          "comments": []
+        },
+        "files": [
+          "SRC/BILLING/invoice.ts"
+        ]
+      },
+      "expected": {
+        "result": "REQUIRES_FOUNDER",
+        "domains": [
+          "payments"
+        ]
+      }
+    },
+    {
+      "id": "authority-label-block",
+      "tier": "safety",
+      "probe": "authority",
+      "input": {
+        "domains": [
+          {
+            "id": "payments",
+            "labels": [
+              "payments"
+            ],
+            "words": [
+              "payments?",
+              "stripe"
+            ],
+            "paths": [
+              "^src/billing/"
+            ]
+          }
+        ],
+        "issue": {
+          "title": "Small change",
+          "body": "",
+          "labels": [
+            {
+              "name": "payments"
+            }
+          ],
+          "comments": []
+        }
+      },
+      "expected": {
+        "result": "REQUIRES_FOUNDER",
+        "domains": [
+          "payments"
+        ]
+      }
+    },
+    {
+      "id": "authority-body-weak-only",
+      "tier": "safety",
+      "probe": "authority",
+      "input": {
+        "domains": [
+          {
+            "id": "payments",
+            "labels": [
+              "payments"
+            ],
+            "words": [
+              "payments?",
+              "stripe"
+            ],
+            "paths": [
+              "^src/billing/"
+            ]
+          }
+        ],
+        "issue": {
+          "title": "Documentation",
+          "body": "Do not change stripe code",
+          "labels": [],
+          "comments": []
+        }
+      },
+      "expected": {
+        "result": "CLEAR",
+        "domains": []
+      }
+    },
+    {
+      "id": "authority-no-protected-domain",
+      "tier": "safety",
+      "probe": "authority",
+      "input": {
+        "domains": [],
+        "issue": {
+          "title": "Fix Stripe settlement",
+          "body": "",
+          "labels": [
+            {
+              "name": "payments"
+            }
+          ],
+          "comments": []
+        },
+        "files": [
+          "src/billing/a.ts"
+        ]
+      },
+      "expected": {
+        "result": "CLEAR",
+        "domains": []
+      }
+    },
+    {
+      "id": "qa-failed-named-check",
+      "tier": "quality",
+      "probe": "qa-findings",
+      "input": {
+        "checks": [
+          {
+            "name": "Lint",
+            "status": "FAIL",
+            "outputTail": "No detailed error"
+          }
+        ]
+      },
+      "expected": {
+        "keys": [
+          "qa:lint"
+        ]
+      }
+    },
+    {
+      "id": "qa-unidentified-fallback",
+      "tier": "quality",
+      "probe": "qa-findings",
+      "input": {
+        "checks": []
+      },
+      "expected": {
+        "keys": [
+          "qa:unspecified"
+        ]
+      }
+    },
+    {
+      "id": "review-p3-is-nonblocking",
+      "tier": "quality",
+      "probe": "review-findings",
+      "input": {
+        "findings": [
+          {
+            "severity": "P3",
+            "file": "src/a.ts",
+            "summary": "Naming issue"
+          }
+        ]
+      },
+      "expected": {
+        "keys": [
+          "review:unspecified"
+        ]
+      }
+    },
+    {
+      "id": "config-default-branch-and-state",
+      "tier": "safety",
+      "probe": "config",
+      "input": {
+        "config": {}
+      },
+      "expected": {
+        "defaultBranch": "main",
+        "stateDir": ".local/auto"
+      }
+    },
+    {
+      "id": "config-invalid-protected-regex",
+      "tier": "safety",
+      "probe": "config",
+      "input": {
+        "config": {
+          "protectedDomains": [
+            {
+              "id": "danger",
+              "paths": [
+                "("
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "errorCode": "CONFIG_INVALID"
+      }
+    }
+  ]
+}
