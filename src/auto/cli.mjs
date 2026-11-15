@@ -1,13 +1,13 @@
 // Coordination entry points for the in-session delivery skills (#962, #991):
-// claim, renew, release, recover, pause, resume, auth-check, founder-resume,
-// repair-record, repair-status, status.
+// claim, renew, release, recover, pause, resume, auth-check, founder-status,
+// founder-resume, repair-record, repair-status, status.
 // `orca-flow` (run from Claude Code via /goal or Pi via /skill:orca-flow) owns
 // the implementation, review and merge; this CLI only holds the shared issue
 // lease, native-worker binding, product-authority gate and repair ledger. Every
 // command prints one JSON document and starts no worker.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { bindNativeWorker, defaultStateDir, claimIssue, getRun, isPaused, openState, recoverExpired, releaseLease, renewLease, resumeFounderPark, unbindNativeWorker } from "./state.mjs";
+import { bindNativeWorker, defaultStateDir, claimIssue, getRun, isPaused, openState, recoverExpired, releaseLease, renewLease, founderStatus, resumeFounderPark, unbindNativeWorker } from "./state.mjs";
 import { fetchIssue as fetchOneIssue } from "./selector.mjs";
 import { authCheck } from "./authcheck.mjs";
 import { fetchPr as fetchOnePr, repairRecord, repairStatus } from "./ledger.mjs";
@@ -17,6 +17,13 @@ export function parseFlags(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (!arg.startsWith("--")) return { error: `unexpected argument ${arg}` };
+    // --dry-run is a switch; `--dry-run true` is accepted too.
+    if (arg === "--dry-run") {
+      if ("dry-run" in flags) return { error: `${arg} given more than once` };
+      flags["dry-run"] = "true";
+      if (argv[i + 1] === "true") i += 1;
+      continue;
+    }
     const value = argv[i + 1];
     if (value === undefined || value.startsWith("--")) return { error: `${arg} needs a value` };
     if (arg.slice(2) in flags) return { error: `${arg} given more than once` };
@@ -134,17 +141,25 @@ export function runCommand(argv, { repoRoot, stateDir = defaultStateDir(repoRoot
       // Expired leases are released so a stalled claim cannot block the issue.
       return { code: 0, result: { ok: true, recovered: recoverExpired(db, { now }) } };
     }
+    if (command === "founder-status") {
+      // Read-only: shows what a founder park blocked and which run id resumes it.
+      const unknown = Object.keys(flags).filter((k) => k !== "issue");
+      if (unknown.length) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: `unknown flag --${unknown[0]}` } };
+      const issue = Number(flags.issue);
+      if (!Number.isInteger(issue) || issue <= 0) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: "--issue must be a positive integer" } };
+      return { code: 0, result: founderStatus(db, { issue }) };
+    }
     if (command === "founder-resume") {
       // Called by orca-flow only after the user explicitly approves the latest
       // founder decision request in this active session.
-      const unknown = Object.keys(flags).filter((k) => !["issue", "owner", "run", "ttl-min"].includes(k));
+      const unknown = Object.keys(flags).filter((k) => !["issue", "owner", "run", "ttl-min", "dry-run"].includes(k));
       if (unknown.length) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: `unknown flag --${unknown[0]}` } };
       const who = lease(flags);
       if (who.error) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: who.error } };
       const ttlMs = flags["ttl-min"] ? Number(flags["ttl-min"]) * 60_000 : undefined;
       if (ttlMs !== undefined && !(ttlMs > 0)) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: "--ttl-min must be positive" } };
       if (paused) return { code: 1, result: { ok: false, code: "PAUSED" } };
-      const result = resumeFounderPark(db, { ...who, ttlMs, now });
+      const result = resumeFounderPark(db, { ...who, ttlMs, dryRun: flags["dry-run"] === "true", now });
       return { code: result.ok ? 0 : 1, result };
     }
     if (command === "repair-status") {

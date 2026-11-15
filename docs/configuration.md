@@ -38,6 +38,32 @@ label; the coordinating session records the user's in-chat approval with `founde
 patterns are also matched case-insensitively so authorization behavior does not depend on checkout
 path casing.
 
+### Inspecting and resuming a founder park
+
+A parked issue (`state: PARKED`, `stop_reason: FOUNDER_APPROVAL_REQUIRED`) is inspected with the
+read-only `founder-status`; it needs no owner or run and never changes state, approvals or leases:
+
+```text
+GUARD auto founder-status --issue ISSUE
+```
+
+It returns `parked`, `state`, `stop_reason`, the parked `run_id`, the latest recorded `block`
+(`phase`, `pr`, `headSha`, `domains`, `strong`, `weak`, `recorded_at`) and `approvedDomains`. For an
+issue that is not a founder park it returns `ok: true, parked: false`.
+
+`founder-resume` only works with the **parked row's `run_id`**, so a later coordinator session must
+read it from `founder-status` and pass it as `--run`. A different run id returns `RUN_MISMATCH` with
+`parkedRunId` (a claim returns `ISSUE_TERMINAL`). Reading `parkedRunId` does not change the check:
+approval remains an explicit coordinator action after the user approves in chat. To preview, add
+`--dry-run` (same `--issue`, `--owner`, `--run`): it applies the same validation, writes nothing and
+returns `wouldApproveDomains`, the resulting `approvedDomains` and `resultingState`.
+
+```text
+GUARD auto founder-status --issue ISSUE
+GUARD auto founder-resume --issue ISSUE --owner OWNER --run PARKED_RUN_ID --dry-run
+GUARD auto founder-resume --issue ISSUE --owner OWNER --run PARKED_RUN_ID   # after explicit user approval
+```
+
 ## Example
 
 `examples/camping-booking.orca.config.json` is a complete, real configuration.

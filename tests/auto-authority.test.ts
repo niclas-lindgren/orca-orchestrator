@@ -141,11 +141,77 @@ describe("campsty-auto auth-check", () => {
     expect(check(["--phase", "merge", "--pr", "50", ...lease], { fetchIssue: protectedIssue, fetchPr: pr({}, ["src/lib/payments/checkout.ts", "src/lib/pricing-discounts.ts"]) }).result).toMatchObject({ result: "FOUNDER_APPROVED" });
   });
 
+  describe("founder-status and founder-resume --dry-run", () => {
+    const protectedIssue = () => ({ ok: true, issue: issue({ title: "Refund rules" }) });
+    const dump = () => {
+      const db = openState(join(stateDir, "state.db"));
+      try {
+        return JSON.stringify({ runs: db.prepare("SELECT * FROM runs").all(), approvals: db.prepare("SELECT * FROM authority_approvals").all(), blocks: db.prepare("SELECT * FROM authority_blocks").all() });
+      } finally {
+        db.close();
+      }
+    };
+
+    it("reports what a parked issue blocked without mutating state", () => {
+      claim();
+      check(["--phase", "plan", ...lease], { fetchIssue: protectedIssue });
+      const before = dump();
+      const out = runCommand(["founder-status", "--issue", "9"], { repoRoot: root, stateDir, now: NOW + 5 });
+      expect(out).toMatchObject({ code: 0, result: { ok: true, issue: 9, parked: true, state: "PARKED", stop_reason: "FOUNDER_APPROVAL_REQUIRED", run_id: "r1", approvedDomains: [], block: { phase: "plan", pr: null, domains: ["pricing-fees-refunds"] } } });
+      expect(out.result.block.strong[0]).toMatchObject({ kind: "title" });
+      expect(out.result.block.weak).toEqual([]);
+      expect(typeof out.result.block.recorded_at).toBe("number");
+      expect(dump()).toBe(before);
+    });
+
+    it("reports a non-parked issue as parked:false", () => {
+      expect(runCommand(["founder-status", "--issue", "9"], { repoRoot: root, stateDir, now: NOW }).result).toEqual({ ok: true, issue: 9, parked: false, state: null, stop_reason: null });
+      claim();
+      expect(runCommand(["founder-status", "--issue", "9"], { repoRoot: root, stateDir, now: NOW }).result).toMatchObject({ ok: true, parked: false, state: "CLAIMED" });
+      expect(runCommand(["founder-status"], { repoRoot: root, stateDir, now: NOW })).toMatchObject({ code: 2, result: { code: "INVALID_ARGS" } });
+    });
+
+    it("lists previously approved domains", () => {
+      claim();
+      check(["--phase", "plan", ...lease], { fetchIssue: protectedIssue });
+      runCommand(["founder-resume", "--issue", "9", ...lease], { repoRoot: root, stateDir, now: NOW });
+      check(["--phase", "merge", "--pr", "50", ...lease], { fetchIssue: protectedIssue, fetchPr: pr({}, ["src/lib/payments/checkout.ts"]) });
+      const out = runCommand(["founder-status", "--issue", "9"], { repoRoot: root, stateDir, now: NOW });
+      expect(out.result).toMatchObject({ parked: true, approvedDomains: ["pricing-fees-refunds"], block: { phase: "merge", pr: 50 } });
+    });
+
+    it("dry-run validates and reports but writes nothing", () => {
+      claim();
+      check(["--phase", "plan", ...lease], { fetchIssue: protectedIssue });
+      const before = dump();
+      const out = runCommand(["founder-resume", "--issue", "9", ...lease, "--dry-run"], { repoRoot: root, stateDir, now: NOW + 5 });
+      expect(out).toMatchObject({ code: 0, result: { ok: true, dryRun: true, wouldApproveDomains: ["pricing-fees-refunds"], resultingState: "CLAIMED" } });
+      expect(dump()).toBe(before);
+      expect(status()).toMatchObject({ state: "PARKED", owner: null });
+      const db = openState(join(stateDir, "state.db"));
+      expect(db.prepare("SELECT COUNT(*) AS n FROM authority_approvals").get().n).toBe(0);
+      db.close();
+      // Same validation as the real command.
+      expect(runCommand(["founder-resume", "--issue", "9", "--owner", "claude", "--run", "other", "--dry-run"], { repoRoot: root, stateDir, now: NOW }).result).toMatchObject({ code: "RUN_MISMATCH", parkedRunId: "r1" });
+      expect(runCommand(["founder-resume", "--issue", "9", ...lease, "--dry-run", "true"], { repoRoot: root, stateDir, now: NOW }).result).toMatchObject({ ok: true, dryRun: true });
+      expect(dump()).toBe(before);
+    });
+
+    it("keeps the real founder-resume behaviour without the flag", () => {
+      claim();
+      check(["--phase", "plan", ...lease], { fetchIssue: protectedIssue });
+      const out = runCommand(["founder-resume", "--issue", "9", ...lease], { repoRoot: root, stateDir, now: NOW });
+      expect(out).toMatchObject({ code: 0, result: { ok: true, approvedDomains: ["pricing-fees-refunds"], run: { state: "CLAIMED", owner: "claude" } } });
+      expect(out.result.dryRun).toBeUndefined();
+      expect(status()).toMatchObject({ state: "CLAIMED", owner: "claude" });
+    });
+  });
+
   it("only resumes a founder park for the same run", () => {
     claim();
     expect(runCommand(["founder-resume", "--issue", "9", ...lease], { repoRoot: root, stateDir, now: NOW }).result).toMatchObject({ code: "NOT_FOUNDER_PARK" });
     expect(check(["--phase", "plan", ...lease], { fetchIssue: () => ({ ok: true, issue: issue({ title: "Refund rules" }) }) }).result).toMatchObject({ result: "REQUIRES_FOUNDER", parked: true });
-    expect(runCommand(["founder-resume", "--issue", "9", "--owner", "claude", "--run", "different"], { repoRoot: root, stateDir, now: NOW }).result).toMatchObject({ code: "RUN_MISMATCH" });
+    expect(runCommand(["founder-resume", "--issue", "9", "--owner", "claude", "--run", "different"], { repoRoot: root, stateDir, now: NOW }).result).toMatchObject({ code: "RUN_MISMATCH", parkedRunId: "r1" });
     expect(status()).toMatchObject({ state: "PARKED", owner: null });
   });
 

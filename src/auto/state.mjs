@@ -201,25 +201,81 @@ export function approvedAuthorityDomains(db, { issue, runId }) {
   return db.prepare("SELECT DISTINCT domain FROM authority_approvals WHERE issue = ? AND run_id = ? ORDER BY domain").all(issue, runId).map((row) => row.domain);
 }
 
+// Validates a founder park for `runId` and reads what resuming would approve.
+// Shared by the real resume and its dry run so both apply the same checks.
+// Reads only; never writes.
+function founderParkApproval(db, { issue, runId }) {
+  const current = row(db, issue);
+  if (!current || current.state !== "PARKED" || current.stop_reason !== "FOUNDER_APPROVAL_REQUIRED") return { ok: false, code: "NOT_FOUNDER_PARK" };
+  // Reports the parked row's run id so a later session can retry with it. The
+  // check itself is unchanged: the run id must still match.
+  if (current.run_id !== runId) return { ok: false, code: "RUN_MISMATCH", parkedRunId: current.run_id };
+  const block = db.prepare("SELECT id, detail FROM authority_blocks WHERE issue = ? AND run_id = ? ORDER BY id DESC LIMIT 1").get(issue, runId);
+  if (!block) return { ok: false, code: "APPROVAL_EVIDENCE_MISSING" };
+  let domains;
+  try {
+    domains = JSON.parse(block.detail).domains;
+  } catch {
+    return { ok: false, code: "APPROVAL_EVIDENCE_INVALID" };
+  }
+  if (!Array.isArray(domains) || !domains.length || domains.some((domain) => typeof domain !== "string")) return { ok: false, code: "APPROVAL_EVIDENCE_INVALID" };
+  return { ok: true, current, block, domains: [...new Set(domains)] };
+}
+
+// Read-only view of a founder park: the parked row, its latest recorded block
+// and the domains already approved. Grants nothing and changes no lease.
+export function founderStatus(db, { issue }) {
+  const current = row(db, issue);
+  if (!current || current.state !== "PARKED" || current.stop_reason !== "FOUNDER_APPROVAL_REQUIRED") {
+    return { ok: true, issue, parked: false, state: current?.state ?? null, stop_reason: current?.stop_reason ?? null };
+  }
+  const block = db.prepare("SELECT * FROM authority_blocks WHERE issue = ? AND run_id = ? ORDER BY id DESC LIMIT 1").get(issue, current.run_id) ?? null;
+  let detail = null;
+  if (block) {
+    try {
+      detail = JSON.parse(block.detail);
+    } catch {
+      detail = null;
+    }
+  }
+  const asArray = (value) => (Array.isArray(value) ? value : []);
+  return {
+    ok: true,
+    issue,
+    parked: true,
+    state: current.state,
+    stop_reason: current.stop_reason,
+    run_id: current.run_id,
+    block: block && {
+      id: block.id,
+      phase: block.phase,
+      pr: block.pr,
+      headSha: block.head_sha,
+      domains: asArray(detail?.domains),
+      strong: asArray(detail?.strong),
+      weak: asArray(detail?.weak),
+      recorded_at: block.recorded_at,
+    },
+    approvedDomains: approvedAuthorityDomains(db, { issue, runId: current.run_id }),
+  };
+}
+
 // Records the user's in-session approval for the latest founder block and
 // restores the same fenced run's lease. The CLI cannot prove what was said in
 // chat; orca-flow is responsible for invoking this only after explicit approval.
-export function resumeFounderPark(db, { issue, owner, runId, ttlMs = DEFAULT_TTL_MS, now = Date.now() }) {
+// With dryRun it applies the same validation but writes nothing.
+export function resumeFounderPark(db, { issue, owner, runId, ttlMs = DEFAULT_TTL_MS, dryRun = false, now = Date.now() }) {
+  if (dryRun) {
+    const checked = founderParkApproval(db, { issue, runId });
+    if (!checked.ok) return checked;
+    const approvedDomains = [...new Set([...approvedAuthorityDomains(db, { issue, runId }), ...checked.domains])].sort();
+    return { ok: true, dryRun: true, wouldApproveDomains: checked.domains, approvedDomains, resultingState: "CLAIMED", resultingOwner: owner };
+  }
   return immediate(db, () => {
-    const current = row(db, issue);
-    if (!current || current.state !== "PARKED" || current.stop_reason !== "FOUNDER_APPROVAL_REQUIRED") return { ok: false, code: "NOT_FOUNDER_PARK" };
-    if (current.run_id !== runId) return { ok: false, code: "RUN_MISMATCH" };
-    const block = db.prepare("SELECT id, detail FROM authority_blocks WHERE issue = ? AND run_id = ? ORDER BY id DESC LIMIT 1").get(issue, runId);
-    if (!block) return { ok: false, code: "APPROVAL_EVIDENCE_MISSING" };
-    let domains;
-    try {
-      domains = JSON.parse(block.detail).domains;
-    } catch {
-      return { ok: false, code: "APPROVAL_EVIDENCE_INVALID" };
-    }
-    if (!Array.isArray(domains) || !domains.length || domains.some((domain) => typeof domain !== "string")) return { ok: false, code: "APPROVAL_EVIDENCE_INVALID" };
+    const checked = founderParkApproval(db, { issue, runId });
+    if (!checked.ok) return checked;
     const approve = db.prepare("INSERT OR IGNORE INTO authority_approvals (issue, run_id, block_id, domain, approved_at) VALUES (?, ?, ?, ?, ?)");
-    for (const domain of [...new Set(domains)]) approve.run(issue, runId, block.id, domain, now);
+    for (const domain of checked.domains) approve.run(issue, runId, checked.block.id, domain, now);
     db.prepare(
       "UPDATE runs SET state = 'CLAIMED', owner = ?, lease_expires_at = ?, heartbeat_at = ?, stop_reason = NULL, updated_at = ? WHERE issue = ?",
     ).run(owner, now + ttlMs, now, now, issue);

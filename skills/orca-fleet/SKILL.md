@@ -161,6 +161,8 @@ Parallelism ends at review. Process one issue at a time through the full guarded
 
 Never review or merge two fleet issues concurrently. A failed issue does not authorize weakening safeguards for the others.
 
+For a parked founder issue, read `founder-status --issue ISSUE` for the evidence and parked `run_id`; after explicit user approval, `founder-resume` must pass that parked `run_id` (`--dry-run` previews without writing; `RUN_MISMATCH` returns `parkedRunId`).
+
 If the repair cap is exhausted or founder authority is rejected while a worker is bound, stop or abandon the exact native dispatch using its receipt, unbind that exact dispatch, release the parked lease, and preserve the worktree for recovery. Never leave a terminal parked row with an active native binding.
 
 ## Completion, unbinding, and cleanup

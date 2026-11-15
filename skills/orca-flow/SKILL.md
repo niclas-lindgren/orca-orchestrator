@@ -100,7 +100,7 @@ Before edits, run:
 GUARD auto auth-check --issue ISSUE --phase plan --owner OWNER --run RUN_ID
 ```
 
-If the result requires founder/user input, stop, preserve evidence, and do not reinterpret silence as approval. After explicit approval use `founder-resume`, then repeat the authority check.
+If the result requires founder/user input, stop, preserve evidence, and do not reinterpret silence as approval. Inspect what was blocked with the read-only `founder-status --issue ISSUE`. After explicit approval use `founder-resume` with the **parked row's `run_id`** from `founder-status` (a later session's own run id returns `RUN_MISMATCH` and `parkedRunId`); `founder-resume --dry-run` previews the domains without writing. Then repeat the authority check.
 
 Read the issue and comments using `gh api`, inspect relevant code, implement the smallest complete solution, and add regression tests. Preserve repository boundaries and unrelated user changes.
 

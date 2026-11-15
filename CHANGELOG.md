@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add read-only `founder-status --issue N` to show what a founder park blocked (phase, PR, head, domains, evidence, approved domains) and the parked `run_id`.
+- Add `founder-resume --dry-run`: same validation, no writes, reports the domains it would approve.
+- `founder-resume` `RUN_MISMATCH` now includes `parkedRunId`; the run-id check is unchanged.
+
 ## 0.3.0 - 2026-11-15
 
 - Move worktree, Task, worker supervision, retry, and cleanup lifecycle to native Orca CLI contracts.
