@@ -1,7 +1,7 @@
 {
   "name": "orca-orchestrator",
-  "version": "0.2.1",
-  "description": "Issue-delivery tooling and skills for Orca-managed repositories: leases, worktrees, dispatch, independent head verification and ChatGPT review, configured per repository.",
+  "version": "0.3.0",
+  "description": "Native Orca issue-delivery skills with repository guards for leases, authority, review, repair, exact-head verification, and cleanup.",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -30,6 +30,8 @@
     "orca-orchestrator": "bin/orca-orchestrator.mjs"
   },
   "files": [
+    ".claude-plugin",
+    ".mcp.json",
     "bin",
     "extensions",
     "src",
@@ -46,7 +48,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "check": "node --check bin/orca-orchestrator.mjs && vitest run"
+    "check": "node --check bin/orca-orchestrator.mjs && node --check bin/orca-orchestrator-mcp.mjs && vitest run"
   },
   "devDependencies": {
     "jsdom": "^31.0.0",

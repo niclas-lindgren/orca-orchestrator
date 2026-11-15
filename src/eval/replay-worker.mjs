@@ -70,6 +70,7 @@ async function probe(item) {
         baseReads++;
         return ok(scenario === "base-moved" && baseReads > 1 ? newHead : baseHead);
       }
+      if (command === "git" && args[0] === "worktree") return ok("worktree /virtual/orca/native/issue-123\nbranch refs/heads/agent/issue-123\n");
       if (command === "git" && args[0] === "branch") return ok("agent/issue-123");
       if (command === "git" && args[0] === "status")
         return ok(scenario === "dirty-worktree" ? " M file.ts" : "");

@@ -1,92 +1,108 @@
-# Installing into a repository
+# Installing `orca-orchestrator`
 
-Orca's skill content is owned by **this repository**. Consumers must not copy, vendor, or edit `orca-flow` or `orca-fleet` inside the application repository.
+`orca-orchestrator` v0.3 separates lifecycle from repository-specific safety:
 
-## Repository CLI for CI and non-Pi harnesses
+- the native Orca CLI owns runs, tasks, workers, retries, supervision, and worktrees;
+- the shared skill supplies the delivery procedure;
+- the installed Pi extension or Claude MCP plugin supplies leases, authority, repair, fresh-review, exact-head, and guarded cleanup commands.
 
-Install the CLI as an independent, reproducible dependency:
+Consumer repositories do **not** install `orca-orchestrator` as an npm dependency and do not add `auto` or `orca` package scripts.
 
-```bash
-npm install --save-dev 'https://github.com/niclas-lindgren/orca-orchestrator/archive/<reviewed-commit>.tar.gz'
-```
+## Prerequisites
 
-Add script entrypoints in `package.json`:
+- Node.js `>=22.19.0`
+- authenticated `gh`
+- native Orca CLI available as `orca` or through `ORCA_CLI_COMMAND`
+- Orca browser automation available for independent ChatGPT review
+- repository `orca.config.json` with the exact gate and delivery policy
 
-```json
-{ "scripts": { "auto": "orca-orchestrator auto", "orca": "orca-orchestrator orca" } }
-```
-
-Create `orca.config.json` using `npx orca-orchestrator init` and adapt the gate, review project, worker instructions, and protected domains; see [configuration](configuration.md). Ignore `.local/` (or your configured `stateDir`) in Git.
-
-**The npm CLI dependency and Pi's package cache are separate installations.** An npm `package-lock.json` freezes the CLI resolution for reproducible verification. `pi update --extensions` does **not** update that lockfile or `node_modules`. Update and review the npm lockfile whenever the shared CLI changes; verify that skills and installed CLI are compatible before operating a delivery flow. Never silently treat a Pi update as a CLI update.
-
-## Pi.dev: native package discovery, no copied skills
-
-From the consumer repository:
+Verify native Orca before installation:
 
 ```bash
-pi install --local git:github.com/niclas-lindgren/orca-orchestrator
-pi update --extensions
+"${ORCA_CLI_COMMAND:-orca}" runtime status --json
+"${ORCA_CLI_COMMAND:-orca}" skills get orchestration --full
 ```
 
-Project settings should contain:
+## Pi
 
-```json
-{ "packages": ["git:github.com/niclas-lindgren/orca-orchestrator"] }
+Install or update the package from GitHub:
+
+```text
+/package install git:github.com/niclas-lindgren/orca-orchestrator
+/package update orca-orchestrator
 ```
 
-The **unpinned** Git source follows its default branch when `pi update --extensions` runs. Explicit `@commit` and `@tag` refs stay pinned. Pi loads `skills/` and `extensions/orca.ts` directly from its managed package. A new Pi session or `/reload` picks up installed changes. Check `pi list` to confirm the loaded package.
+Restart Pi after installation. The package contributes:
 
-Updating Pi alone doesn't update npm's CLI. For safety, do not run new skill procedures that require commands unsupported by the CLI version in `node_modules`; upgrade the npm dependency first.
+- `orca-flow` and `orca-fleet` skills;
+- `orca_guard`, the allowlisted repository guard adapter;
+- `orca_status` and `/orca-status` for read-only inspection.
 
-## Claude Code: shared plugin, no copied skills
+The adapter launches its own bundled guard CLI. It never resolves a binary from the consumer repository.
 
-This repository is also a Claude Code plugin marketplace. The consuming repository declares the marketplace and enables the plugin in its `.claude/settings.json`:
+## Claude Code
 
-```json
-{
-  "extraKnownMarketplaces": {
-    "orca-orchestrator-marketplace": {
-      "source": { "source": "github", "repo": "niclas-lindgren/orca-orchestrator" },
-      "autoUpdate": true
-    }
-  },
-  "enabledPlugins": { "orca-orchestrator@orca-orchestrator-marketplace": true }
-}
-```
-
-After trusting the repository, run the **one-time installation for that checkout** (a checked-in `enabledPlugins` entry does not download the plugin to the machine):
+Install the plugin from its configured marketplace, or load a checkout for development:
 
 ```bash
-claude plugin install orca-orchestrator@orca-orchestrator-marketplace --scope project
-claude plugin list
+claude --plugin-dir /path/to/orca-orchestrator
 ```
 
-If the marketplace was not registered yet, add it explicitly first:
+The plugin root contains `.mcp.json`, which starts the dependency-free `bin/orca-orchestrator-mcp.mjs` server and exposes `orca_guard`. `${CLAUDE_PROJECT_DIR}` is passed as the repository root; `${CLAUDE_PLUGIN_ROOT}` resolves the bundled server.
+
+After installation, confirm the MCP server is connected and its `orca_guard` tool is visible before claiming an issue.
+
+## Consumer repository setup
+
+Keep only repository policy in the consumer:
+
+1. Add and review `orca.config.json`.
+2. Keep the configured gate runnable from every issue worktree.
+3. Add repository-local instructions such as `AGENTS.md` or `CLAUDE.md` when needed.
+4. Do not add `orca-orchestrator` to `dependencies` or `devDependencies`.
+5. Remove legacy scripts:
+   ```json
+   {
+     "scripts": {
+       "auto": "orca-orchestrator auto",
+       "orca": "orca-orchestrator orca"
+     }
+   }
+   ```
+
+Native lifecycle commands are invoked directly:
 
 ```bash
-claude plugin marketplace add niclas-lindgren/orca-orchestrator
+ORCA="${ORCA_CLI_COMMAND:-orca}"
+"$ORCA" orchestration run-create --objective "..."
+"$ORCA" orchestration task-create --spec "..." --deps '[]'
+"$ORCA" orchestration worker-start --task TASK --worktree new-child --agent pi
+"$ORCA" worktree create --branch agent/issue-42 --issue 42 --parent-worktree current
+"$ORCA" worktree rm --worktree SELECTOR --delete-branch --json
 ```
 
-Claude loads `skills/orca-flow` and `skills/orca-fleet` from the installed plugin as `/orca-orchestrator:orca-flow` and `/orca-orchestrator:orca-fleet`. Use `claude plugin details orca-orchestrator` to inspect the skills. It is not enough to see `enabledPlugins` in a settings file: confirm the package actually appears in `claude plugin list`.
+Repository guards are tool calls, not shell scripts:
 
-The plugin manifest intentionally **omits `version`**, so that Claude Code can detect new upstream commits when refreshing the marketplace rather than waiting for a separately bumped release number. Project `autoUpdate: true` requests automatic updates, but updates may be delayed or disabled by network and host settings. To request an immediate update run:
-
-```bash
-claude plugin update orca-orchestrator@orca-orchestrator-marketplace
+```text
+orca_guard({ group: "auto", command: "claim", args: ["--issue", "42", "--owner", "...", "--run", "..."] })
+orca_guard({ group: "orca", command: "verify-head", args: ["--issue", "42", "--owner", "...", "--run", "...", "--pr", "99"] })
 ```
 
-Refreshing Claude's plugin does **not** update npm's locked CLI. Update and test that separately before using newly introduced CLI commands.
+## Migration from v0.2
 
-## Legacy installer
+1. Install/update the Pi or Claude package first.
+2. Confirm `orca_guard` loads from the installed package.
+3. Confirm native Orca runtime, orchestration skill, worktree commands, and browser backend.
+4. Remove consumer npm scripts and the GitHub tarball dependency.
+5. Reinstall dependencies to update the lockfile.
+6. Search for stale invocations:
+   ```bash
+   rg 'npm run (auto|orca)|orca-orchestrator (auto|orca)' .
+   ```
+7. Run the repository gate from a clean native Orca child worktree.
 
-`install-skills` and `check-skills` remain available for older consumers, but **do not use them in new consumers**. They copy skill files, producing a second maintained copy and potentially stale procedures. Prefer native Pi packages and Claude plugins.
+Migration fails closed: do not claim work if native Orca or the installed guard adapter is unavailable.
 
-## Updating safely
+## Version-skew rule
 
-1. Review upstream Orca changes, especially command contracts, authority checks, lease handling and review gating.
-2. Run `pi update --extensions` to refresh Pi's unpinned Git package. For Claude use `claude plugin update orca-orchestrator@orca-orchestrator-marketplace`, or verify that the configured marketplace auto-update has applied.
-3. Update the npm CLI dependency and its lockfile in a reviewed application PR when new commands or behavior are required.
-4. Run the application's canonical gate and inspect the available skill and CLI commands before dispatching workers.
-
-Requirements: Node >= 22.19, `git`, authenticated `gh`, and the Orca CLI.
+The installed Pi/Claude package is the source of the shared skills and guard adapter. Native Orca is the source of orchestration semantics. A consumer lockfile no longer pins a separate orchestration implementation, eliminating the previous package-versus-skill skew.

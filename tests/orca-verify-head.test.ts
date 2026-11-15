@@ -22,6 +22,7 @@ function fixture(opts: {
   trackingBase?: string;
   remoteBase?: string[];
   verifyStatus?: number;
+  ownsLease?: () => boolean;
 } = {}) {
   const calls: string[] = [];
   let views = 0;
@@ -38,6 +39,7 @@ function fixture(opts: {
       const bases = opts.remoteBase ?? [BASE, BASE];
       return reply(bases[Math.min(lsRemotes++, bases.length - 1)] + "\n");
     }
+    if (args[0] === "worktree") return reply("worktree /repo/.worktrees/issue-55\nHEAD " + HEAD + "\nbranch refs/heads/agent/issue-55\n");
     if (args[0] === "branch") return reply(opts.branch ?? pr.headRefName);
     if (args[0] === "rev-parse") return reply(args[1] === "refs/remotes/origin/main" ?
       (opts.trackingBase ?? BASE) : (opts.head ?? HEAD));
@@ -45,7 +47,7 @@ function fixture(opts: {
     if (args[0] === "status") return reply(opts.status ?? "");
     throw new Error("Unexpected command: " + command + " " + args.join(" "));
   };
-  return { calls, exec, run: () => verifyHead({ repoRoot: "/repo", issue: 55, pr: 123, exec }) };
+  return { calls, exec, run: () => verifyHead({ repoRoot: "/repo", issue: 55, pr: 123, exec, ownsLease: opts.ownsLease }) };
 }
 
 describe("Orca coordinator verify-head", () => {
@@ -87,6 +89,12 @@ describe("Orca coordinator verify-head", () => {
   it("fails closed on a nonzero test/lint/quality gate", () => {
     expect(fixture({ verifyStatus: 1 }).run()).toMatchObject({ ok: false, code: "VERIFICATION_FAILED" });
   });
+  it("requires the same live issue lease before and after verification", () => {
+    expect(fixture({ ownsLease: () => false }).run()).toMatchObject({ ok: false, code: "LEASE_LOST" });
+    let reads = 0;
+    expect(fixture({ ownsLease: () => reads++ === 0 }).run()).toMatchObject({ ok: false, code: "LEASE_LOST" });
+  });
+
   it("invalidates verification if head or base moves during the run", () => {
     expect(fixture({ secondPR: { ...pr, headRefOid: "c".repeat(40) } }).run().ok).toBe(false);
     expect(fixture({ remoteBase: [BASE, "d".repeat(40)] }).run().ok).toBe(false);
@@ -96,7 +104,7 @@ describe("Orca coordinator verify-head", () => {
     expect(parseArgs(args)).toMatchObject({ command: "verify-head", issue: 55, pr: 123 });
     expect(parseArgs(args.slice(0, -2)).error).toBe("--pr must be a positive integer");
     const f = fixture();
-    expect(main(args, { repoRoot: "/repo", exec: f.exec })).toMatchObject({
+    expect(main(args, { repoRoot: "/repo", exec: f.exec, ownsLease: () => true })).toMatchObject({
       code: 0, result: { ok: true, head: HEAD },
     });
     expect(f.calls.some(call => call.startsWith("gh issue view"))).toBe(false);

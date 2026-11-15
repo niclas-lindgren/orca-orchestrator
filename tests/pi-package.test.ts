@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const root = join(import.meta.dirname, "..");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const extension = readFileSync(join(root, "extensions", "orca.ts"), "utf8");
+const mcp = readFileSync(join(root, "bin", "orca-orchestrator-mcp.mjs"), "utf8");
 
 describe("Pi package", () => {
   it("declares the extension, canonical skills and host peer dependencies", () => {
@@ -14,15 +15,26 @@ describe("Pi package", () => {
       "@earendil-works/pi-coding-agent": "*",
       typebox: "*",
     });
-    expect(pkg.files).toEqual(expect.arrayContaining(["extensions", "skills", "CHANGELOG.md"]));
+    expect(pkg.files).toEqual(expect.arrayContaining([".claude-plugin", ".mcp.json", "extensions", "skills", "CHANGELOG.md"]));
   });
 
-  it("keeps the Pi-native tool read-only and bounded", () => {
+  it("keeps status read-only and exposes only allowlisted bundled guards", () => {
     expect(extension).toContain('name: "orca_status"');
+    expect(extension).toContain('name: "orca_guard"');
     expect(extension).toContain('const args = [cliPath, "auto", "status"]');
     expect(extension).toContain("timeout: 15_000");
     expect(extension).toContain("output.slice(0, 20_000)");
-    expect(extension).not.toContain('"review-delete"');
-    expect(extension).not.toContain('"claim"');
+    expect(extension).toContain("ALLOWED[params.group].has(params.command)");
+    expect(extension).toContain("[cliPath, params.group, params.command");
+    expect(extension).toContain('"bind-native", "unbind-native"');
+    expect(extension).toContain('"review-send", "review-wait", "review-read", "review-delete"');
+    expect(extension).not.toContain("npm run");
+  });
+
+  it("bounds and cancels Claude MCP guard subprocesses", () => {
+    expect(mcp).toContain("COMMAND_TIMEOUT_MS");
+    expect(mcp).toContain('method === "notifications/cancelled"');
+    expect(mcp).toContain("process.kill(-child.pid");
+    expect(mcp).toContain('error(id, -32800');
   });
 });

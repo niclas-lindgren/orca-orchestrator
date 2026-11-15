@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { reviewFindingKeys } from "./findings.mjs";
 import { repoSlug } from "../config.mjs";
 import { getRun, isPaused, ledgerFor, recordRepairAttempt } from "./state.mjs";
-import { worktreePathFor } from "./worktrees.mjs";
+import { resolveIssueWorktree } from "./worktrees.mjs";
 
 const MAX_FINDINGS = 100;
 const BLOCKED_LABEL = "status:blocked";
@@ -62,8 +62,11 @@ export function repairRecord(db, { repoRoot, stateDir, who, pr, headSha, finding
   if (isPaused(stateDir)) return fail({ code: "PAUSED" });
   const run = getRun(db, who.issue);
   if (!run || run.owner !== who.owner || run.run_id !== who.runId || !(run.lease_expires_at > now)) return fail({ code: "LEASE_LOST" });
-  // The evidence is the reviewed commit, so the tree must be that commit, whole.
-  const cwd = worktreePathFor(repoRoot, who.issue);
+  // The evidence is the reviewed commit, so the registered native worktree
+  // must be that commit, whole. Discovery failures are not absence.
+  const resolved = resolveIssueWorktree(repoRoot, who.issue);
+  if (!resolved.ok) return fail({ code: resolved.code, error: resolved.error ?? null, branch: resolved.branch ?? null });
+  const cwd = resolved.path;
   const current = headOf(cwd);
   if (!current) return fail({ code: "WORKTREE_UNAVAILABLE" });
   if (current !== headSha) return fail({ code: "STALE_HEAD", expected: headSha, headSha: current });

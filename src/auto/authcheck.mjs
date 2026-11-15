@@ -3,7 +3,7 @@
 import { classify } from "./authority.mjs";
 import { invalidIssue } from "./selector.mjs";
 import { approvedAuthorityDomains, getRun, isPaused, parkForFounder } from "./state.mjs";
-import { worktreePathFor } from "./worktrees.mjs";
+import { resolveIssueWorktree } from "./worktrees.mjs";
 import { spawnSync } from "node:child_process";
 
 // gh returns at most this many changed files; a PR at the limit may have more.
@@ -64,11 +64,15 @@ export function authCheck(db, { repoRoot, stateDir, issue, phase, pr = null, who
     if (p.number !== pr || String(p.state).toUpperCase() !== "OPEN" || p.headRefName !== `agent/issue-${issue}` || p.isCrossRepository === true) {
       return unavailable("PR_MISMATCH", { pr, state: p.state ?? null, branch: p.headRefName ?? null, expected: `agent/issue-${issue}` });
     }
-    // At merge the pull request must be the commit in the worktree, or the
-    // paths checked are not the paths being merged.
-    head = headOf(worktreePathFor(repoRoot, issue));
-    if (phase === "merge" && (!head || head !== p.headRefOid)) return unavailable("PR_HEAD_MISMATCH", { pr, prHead: p.headRefOid ?? null, headSha: head });
-    if (phase === "merge" && dirtyIn(worktreePathFor(repoRoot, issue))) return unavailable("DIRTY_WORKTREE", { headSha: head });
+    // At merge the pull request must be the commit in the registered native
+    // worktree, or the paths checked are not the paths being merged.
+    if (phase === "merge") {
+      const resolved = resolveIssueWorktree(repoRoot, issue);
+      if (!resolved.ok) return unavailable(resolved.code, { error: resolved.error ?? null, branch: resolved.branch ?? null });
+      head = headOf(resolved.path);
+      if (!head || head !== p.headRefOid) return unavailable("PR_HEAD_MISMATCH", { pr, prHead: p.headRefOid ?? null, headSha: head });
+      if (dirtyIn(resolved.path)) return unavailable("DIRTY_WORKTREE", { headSha: head });
+    }
     if (!Array.isArray(p.files) || p.files.some((f) => typeof f?.path !== "string")) return unavailable("FILES_UNAVAILABLE");
     // A list cut off at the limit cannot show that no protected path is in it.
     if (p.files.length >= FILE_LIMIT) return unavailable("FILES_TRUNCATED", { count: p.files.length });

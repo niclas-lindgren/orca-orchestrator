@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "orca-orchestrator": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/bin/orca-orchestrator-mcp.mjs"
+      ],
+      "env": {
+        "ORCA_REPO_ROOT": "${CLAUDE_PROJECT_DIR}"
+      }
+    }
+  }
+}

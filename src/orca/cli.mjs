@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultStateDir } from "../auto/state.mjs";
+import { defaultStateDir, getRun, openState } from "../auto/state.mjs";
 import { buildDispatchPlan, dispatch } from "./adapter.mjs";
 import { readStatus, tick } from "./dispatcher.mjs";
 import { verifyHead } from "./verify-head.mjs";
@@ -61,9 +61,9 @@ function run(cmd, args, cwd) {
 
 /**
  * @param {string[]} argv
- * @param {{ repoRoot: string, exec?: (command: string, args: string[], cwd: string) => { status: number | null, stdout: string, stderr: string }, now?: () => number }} options
+ * @param {{ repoRoot: string, exec?: (command: string, args: string[], cwd: string) => { status: number | null, stdout: string, stderr: string }, now?: () => number, ownsLease?: () => boolean }} options
  */
-export function main(argv, { repoRoot, exec = run, now = () => Date.now() }) {
+export function main(argv, { repoRoot, exec = run, now = () => Date.now(), ownsLease: suppliedOwnsLease = null }) {
   const parsed = parseArgs(argv);
   if (parsed.error) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: parsed.error } };
   const { command, issue, owner, runId, agent } = parsed;
@@ -95,8 +95,21 @@ export function main(argv, { repoRoot, exec = run, now = () => Date.now() }) {
     return { code: report.ok ? 0 : 1, result: report };
   }
   if (command === "verify-head") {
-    const receipt = verifyHead({ repoRoot, issue, pr: parsed.pr, exec });
-    return { code: receipt.ok ? 0 : 1, result: receipt };
+    if (suppliedOwnsLease) {
+      const receipt = verifyHead({ repoRoot, issue, pr: parsed.pr, exec, ownsLease: suppliedOwnsLease });
+      return { code: receipt.ok ? 0 : 1, result: receipt };
+    }
+    const db = openState(resolve(defaultStateDir(repoRoot), "state.db"));
+    try {
+      const ownsLease = () => {
+        const lease = getRun(db, issue);
+        return Boolean(lease && lease.owner === owner && lease.run_id === runId && lease.lease_expires_at > now());
+      };
+      const receipt = verifyHead({ repoRoot, issue, pr: parsed.pr, exec, ownsLease });
+      return { code: receipt.ok ? 0 : 1, result: receipt };
+    } finally {
+      db.close();
+    }
   }
   const titleResult = exec("gh", ["issue", "view", String(issue), "--json", "title", "--jq", ".title"], repoRoot);
   if (titleResult.status !== 0) {

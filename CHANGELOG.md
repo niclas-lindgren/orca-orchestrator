@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 - 2026-11-15
+
+- Move worktree, Task, worker supervision, retry, and cleanup lifecycle to native Orca CLI contracts.
+- Add Pi and Claude MCP `orca_guard` adapters for repository leases, authority, repair, review, exact-head, and cleanup safeguards without a repository-local npm dependency.
+- Add durable provisional/final native dispatch bindings and fail-closed native worktree discovery.
+- Migrate the canonical flow/fleet skills and consumer installation guidance away from `npm run auto` / `npm run orca` wrappers.
+
 ## 0.2.1 - 2026-11-09
 
 - Fix orca-flow skill: remove hardcoded Hockey ChatGPT project URL (now reads from config)

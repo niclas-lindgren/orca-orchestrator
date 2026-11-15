@@ -1,10 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCommand } from "../src/auto/cli.mjs";
-import { branchFor } from "../src/auto/worktrees.mjs";
 
 const git = (cwd: string, ...args: string[]) => {
   const r = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -28,11 +27,11 @@ const claim = (issue: number, run: string, owner = "claude", now = 1_000_000) =>
   runCommand(["claim", "--issue", String(issue), "--owner", owner, "--run", run], { repoRoot: root, now });
 
 describe("campsty-auto cli", () => {
-  it("claims an issue, creates its worktree on the issue branch and reports status", () => {
+  it("claims only the issue lease and leaves worktree creation to native Orca", () => {
     const { code, result } = claim(5, "r1");
     expect(code).toBe(0);
-    expect(result).toMatchObject({ ok: true, branch: branchFor(5), worktree: join(root, ".worktrees", "issue-5") });
-    expect(git(result.worktree, "rev-parse", "--abbrev-ref", "HEAD")).toBe("agent/issue-5");
+    expect(result).toMatchObject({ ok: true, lease: { issue: 5, state: "CLAIMED", owner: "claude" } });
+    expect(result).not.toHaveProperty("worktree");
     const status = runCommand(["status"], { repoRoot: root, now: 1_000_001 });
     expect(status.result.runs).toMatchObject([{ issue: 5, state: "CLAIMED", owner: "claude" }]);
   });
@@ -137,51 +136,58 @@ describe("campsty-auto cli", () => {
     });
   });
 
-  it("releases the lease and reports a mismatch when the worktree is on another branch", () => {
-    mkdirSync(join(root, ".worktrees"), { recursive: true });
-    git(root, "worktree", "add", "-b", "other", join(root, ".worktrees", "issue-7"));
-    const { code, result } = claim(7, "r1");
-    expect(code).toBe(1);
-    expect(result).toMatchObject({ ok: false, code: "WORKSPACE_MISMATCH", expected: "agent/issue-7", actual: "other" });
-    const status = runCommand(["status", "--issue", "7"], { repoRoot: root, now: 1_000_001 });
-    expect(status.result.runs[0].owner).toBeNull();
+  it("binds a native Orca dispatch and reports its durable identity", () => {
+    claim(7, "r1");
+    const bound = runCommand([
+      "bind-native", "--issue", "7", "--owner", "claude", "--run", "r1",
+      "--native-run", "run-native", "--task", "task-7", "--dispatch", "dispatch-7", "--worktree", "wt-7",
+    ], { repoRoot: root, now: 1_000_100 });
+    expect(bound).toMatchObject({ code: 0, result: { ok: true, run: { native_run_id: "run-native", native_task_id: "task-7", native_dispatch_id: "dispatch-7", native_worktree: "wt-7" } } });
   });
 
-  it("rejects a directory that is another repository on a same-named branch", () => {
-    const other = join(root, ".worktrees", "issue-9");
-    mkdirSync(other, { recursive: true });
-    git(other, "init", "-q", "-b", "agent/issue-9");
-    expect(claim(9, "r1").result).toMatchObject({ ok: false, code: "WORKSPACE_MISMATCH" });
+  it("finalizes a provisional native launch binding without opening a takeover gap", () => {
+    claim(6, "r1");
+    const pending = runCommand([
+      "bind-native", "--issue", "6", "--owner", "claude", "--run", "r1",
+      "--native-run", "run-native", "--task", "task-6", "--dispatch", "pending:start-6", "--worktree", "wt-6",
+    ], { repoRoot: root, now: 1_000_100 });
+    expect(pending.result).toMatchObject({ ok: true, run: { native_dispatch_id: "pending:start-6" } });
+    const finalized = runCommand([
+      "bind-native", "--issue", "6", "--owner", "claude", "--run", "r1",
+      "--native-run", "run-native", "--task", "task-6", "--dispatch", "dispatch-6", "--worktree", "wt-6",
+    ], { repoRoot: root, now: 1_000_200 });
+    expect(finalized.result).toMatchObject({ ok: true, run: { native_dispatch_id: "dispatch-6" } });
+    expect(runCommand([
+      "bind-native", "--issue", "6", "--owner", "claude", "--run", "r1",
+      "--native-run", "other", "--task", "task-6", "--dispatch", "dispatch-other", "--worktree", "wt-6",
+    ], { repoRoot: root, now: 1_000_300 }).result).toMatchObject({ ok: false, code: "NATIVE_BINDING_ACTIVE", dispatchId: "dispatch-6" });
   });
 
-  it("reports uncommitted work on reuse without cleaning it", () => {
-    const first = claim(10, "r1");
-    writeFileSync(join(first.result.worktree, "wip.txt"), "x");
-    const again = claim(10, "r1", "claude", 1_000_100);
-    expect(again.result).toMatchObject({ ok: true, dirty: true });
-    expect(existsSync(join(first.result.worktree, "wip.txt"))).toBe(true);
-  });
-
-  it("keeps the live lease when a repeated claim fails on the worktree", () => {
-    const first = claim(11, "r1");
-    rmSync(first.result.worktree, { recursive: true, force: true });
-    git(root, "worktree", "add", "-f", join(root, "elsewhere"), "agent/issue-11");
-    const again = claim(11, "r1", "claude", 1_000_100);
-    expect(again.result).toMatchObject({ ok: false, code: "WORKTREE_FAILED" });
-    const status = runCommand(["status", "--issue", "11"], { repoRoot: root, now: 1_000_200 });
-    expect(status.result.runs[0]).toMatchObject({ owner: "claude", run_id: "r1" });
-  });
-
-  it("reuses the issue branch after release and recovers expired leases", () => {
-    const first = claim(8, "r1");
-    writeFileSync(join(first.result.worktree, "b.txt"), "b");
-    git(first.result.worktree, "add", "b.txt");
-    git(first.result.worktree, "commit", "-q", "-m", "work");
+  it("blocks takeover and release while a native dispatch remains bound", () => {
+    claim(8, "r1");
+    runCommand([
+      "bind-native", "--issue", "8", "--owner", "claude", "--run", "r1",
+      "--native-run", "run-native", "--task", "task-8", "--dispatch", "dispatch-8", "--worktree", "wt-8",
+    ], { repoRoot: root, now: 1_000_100 });
     const lapse = 1_000_000 + 31 * 60_000;
-    expect(runCommand(["recover"], { repoRoot: root, now: lapse }).result).toMatchObject({ recovered: [8] });
-    const again = claim(8, "r2", "claude", lapse + 1);
-    expect(again.result).toMatchObject({ ok: true, lease: { state: "CLAIMED", run_id: "r2" } });
-    expect(existsSync(join(again.result.worktree, "b.txt"))).toBe(true);
+    expect(runCommand(["recover"], { repoRoot: root, now: lapse }).result).toMatchObject({ recovered: [] });
+    expect(claim(8, "r2", "pi", lapse + 1).result).toMatchObject({ ok: false, code: "NATIVE_BINDING_ACTIVE", dispatchId: "dispatch-8" });
+    expect(runCommand(["release", "--issue", "8", "--owner", "claude", "--run", "r1"], { repoRoot: root, now: lapse }).result)
+      .toMatchObject({ ok: false, code: "NATIVE_BINDING_ACTIVE", dispatchId: "dispatch-8" });
+  });
+
+  it("requires the exact native dispatch receipt before unbinding and handing off", () => {
+    claim(9, "r1");
+    runCommand([
+      "bind-native", "--issue", "9", "--owner", "claude", "--run", "r1",
+      "--native-run", "run-native", "--task", "task-9", "--dispatch", "dispatch-9", "--worktree", "wt-9",
+    ], { repoRoot: root, now: 1_000_100 });
+    expect(runCommand(["unbind-native", "--issue", "9", "--owner", "claude", "--run", "r1", "--dispatch", "wrong"], { repoRoot: root, now: 1_000_200 }).result)
+      .toMatchObject({ ok: false, code: "DISPATCH_MISMATCH", expected: "dispatch-9" });
+    expect(runCommand(["unbind-native", "--issue", "9", "--owner", "claude", "--run", "r1", "--dispatch", "dispatch-9"], { repoRoot: root, now: 1_000_300 }).result)
+      .toMatchObject({ ok: true, already: false, run: { native_dispatch_id: null } });
+    expect(runCommand(["release", "--issue", "9", "--owner", "claude", "--run", "r1"], { repoRoot: root, now: 1_000_400 }).result)
+      .toMatchObject({ ok: true, run: { owner: null } });
   });
 
   it("rejects malformed arguments", () => {

@@ -3,10 +3,15 @@
 Issue-delivery tooling and agent skills for repositories worked on with [Orca](https://orca.build),
 shared so that fixes are made once instead of in every repository's private copy.
 
-**Tools** (`orca-orchestrator auto|orca`): a local lease database so two sessions never work the same
-issue, claimed worktrees, a protected-domain authority check, a repair ledger with caps, dispatch of
-one supervised worker per issue, independent final-head verification, worktree cleanup, and a guarded
-ChatGPT review browser (open, send, wait, read, delete-only-what-you-sent).
+**Native lifecycle** (`orca orchestration|worktree`): Orca owns runs, tasks, supervised workers,
+retries, lineage, and child worktrees. The skills load the current native contract with
+`orca skills get orchestration --full` instead of routing lifecycle through repository npm scripts.
+
+**Installed guard adapters** (`orca_guard`): the Pi extension and Claude MCP plugin expose the
+repository-specific safety layer that native Orca does not provide: atomic issue leases, protected-
+domain authority, repair caps, fresh ChatGPT review, exact-head verification, and guarded cleanup.
+The adapter launches the package's bundled guard CLI, so consumer repositories need neither an
+`orca-orchestrator` npm dependency nor `auto`/`orca` package scripts.
 
 **Learning (proposal-only)** (`orca-orchestrator learn record|report|propose|packet`): captures bounded,
 structured run outcomes in a repository-scoped SQLite store, reports recurring review/QA/workflow
@@ -24,9 +29,10 @@ safety-case accounting, strict provenance and fails closed on mutated checkouts.
 offline contract-evaluation harness, **not** an end-to-end agent productivity benchmark or
 an automatic merge authority. See [docs/evaluation.md](docs/evaluation.md).
 
-**Pi extension** (`extensions/orca.ts`): the read-only `orca_status` tool and
-`/orca-status [issue]` command expose lease/run inspection inside Pi. The same
-Pi package also loads the canonical skills below.
+**Agent integrations**: `extensions/orca.ts` contributes Pi's allowlisted `orca_guard`, read-only
+`orca_status`, and `/orca-status [issue]`. `.mcp.json` starts the dependency-free Claude adapter in
+`bin/orca-orchestrator-mcp.mjs`. Both load commands from the installed package rather than the
+consumer checkout. The same package also loads the canonical skills below.
 
 | Skill | Use |
 |---|---|
@@ -57,6 +63,7 @@ and authority gates. The initial release does not automate those downstream step
 
 ## Status
 
-v0.2: shared CLI, Pi extension, and canonical flow/fleet skills are consumed by multiple
-repositories. A future hardening opportunity is a stricter provenance check that ties
-`review-delete` to the conversation id returned by `review-send`.
+v0.3: flow and fleet use native Orca for orchestration and worktree lifecycle. Pi and Claude expose
+allowlisted installed-package guard adapters, issue leases bind durably to native run/task/dispatch
+receipts, and consumer repositories no longer need orchestration npm scripts or a package dependency.
+Proposal-only learning and independent promotion policy remain unchanged.

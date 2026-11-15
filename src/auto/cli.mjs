@@ -3,18 +3,14 @@
 // repair-record, repair-status, status.
 // `orca-flow` (run from Claude Code via /goal or Pi via /skill:orca-flow) owns
 // the implementation, review and merge; this CLI only holds the shared issue
-// lease, its worktree, the product-authority gate and the repair ledger. Every
+// lease, native-worker binding, product-authority gate and repair ledger. Every
 // command prints one JSON document and starts no worker.
-import { activeConfig } from "../config.mjs";
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { defaultStateDir, claimIssue, getRun, isPaused, openState, recoverExpired, releaseLease, renewLease, resumeFounderPark } from "./state.mjs";
+import { join } from "node:path";
+import { bindNativeWorker, defaultStateDir, claimIssue, getRun, isPaused, openState, recoverExpired, releaseLease, renewLease, resumeFounderPark, unbindNativeWorker } from "./state.mjs";
 import { fetchIssue as fetchOneIssue } from "./selector.mjs";
 import { authCheck } from "./authcheck.mjs";
 import { fetchPr as fetchOnePr, repairRecord, repairStatus } from "./ledger.mjs";
-import { ensureWorktree } from "./worktrees.mjs";
 
 export function parseFlags(argv) {
   const flags = {};
@@ -66,10 +62,11 @@ function activeDispatchRecord(stateDir, { issue, owner, runId }) {
   return { file, record };
 }
 
-// Claim, then prepare the issue worktree. The worktree is only touched after
-// the lease is ours, and only a lease this call acquired may be rolled back: a
-// repeated claim by the live holder must not drop the run that is still using it.
-function claimWithWorktree(db, { who, ttlMs, now, repoRoot, stateDir, base, afterLeaseAcquired = () => {} }) {
+// Claim only the repository-scoped issue lease. Native Orca owns worktree and
+// worker lifecycle; bind-native records its durable dispatch receipt before
+// implementation begins. Legacy dispatch records remain a fail-closed guard
+// during migration from older coordinators.
+function claimLease(db, { who, ttlMs, now, stateDir, afterLeaseAcquired = () => {} }) {
   const refusal = (active) => {
     const { owner, runId, state } = active.record;
     return { code: 1, result: { ok: false, code: "DISPATCH_ACTIVE", recordFile: active.file, record: { owner, runId, state } } };
@@ -97,12 +94,7 @@ function claimWithWorktree(db, { who, ttlMs, now, repoRoot, stateDir, base, afte
     rollback();
     return { code: 1, result: { ok: false, code: "PAUSED" } };
   }
-  const tree = ensureWorktree(repoRoot, who.issue, base);
-  if (!tree.ok) {
-    rollback();
-    return { code: 1, result: tree };
-  }
-  return { code: 0, result: { ok: true, lease: claimed.run, worktree: tree.path, branch: tree.branch, dirty: tree.dirty } };
+  return { code: 0, result: { ok: true, lease: claimed.run } };
 }
 
 export function runCommand(argv, { repoRoot, stateDir = defaultStateDir(repoRoot), now = Date.now(), fetchIssue = fetchOneIssue, fetchPr = fetchOnePr, clock = () => Date.now(), afterLeaseAcquired = () => {} }) {
@@ -169,6 +161,28 @@ export function runCommand(argv, { repoRoot, stateDir = defaultStateDir(repoRoot
       if (who.error) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: who.error } };
       return repairRecord(db, { repoRoot, stateDir, who, pr: Number(flags.pr), headSha: flags.head, findingsFile: flags["findings-file"], fetchIssue, fetchPr, now });
     }
+    if (command === "bind-native" || command === "unbind-native") {
+      const allowed = command === "bind-native"
+        ? ["issue", "owner", "run", "native-run", "task", "dispatch", "worktree"]
+        : ["issue", "owner", "run", "dispatch"];
+      const unknown = Object.keys(flags).filter((key) => !allowed.includes(key));
+      if (unknown.length) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: `unknown flag --${unknown[0]}` } };
+      const who = lease(flags);
+      if (who.error) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: who.error } };
+      if (!flags.dispatch) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: "--dispatch is required" } };
+      let result;
+      if (command === "unbind-native") {
+        result = unbindNativeWorker(db, { ...who, dispatchId: flags.dispatch, now });
+      } else if (!flags["native-run"] || !flags.task || !flags.worktree) {
+        result = { ok: false, code: "INVALID_ARGS", error: "--native-run, --task, --dispatch and --worktree are required" };
+      } else {
+        result = bindNativeWorker(db, { ...who, nativeRunId: flags["native-run"], taskId: flags.task, dispatchId: flags.dispatch, worktree: flags.worktree, now });
+      }
+      let code = 1;
+      if (result.ok) code = 0;
+      else if (result.code === "INVALID_ARGS") code = 2;
+      return { code, result };
+    }
     if (!["claim", "renew", "release"].includes(command)) {
       return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: `unknown command ${command ?? ""}`.trim() } };
     }
@@ -188,7 +202,7 @@ export function runCommand(argv, { repoRoot, stateDir = defaultStateDir(repoRoot
     }
     // claim: a paused coordinator starts nothing.
     if (paused) return { code: 1, result: { ok: false, code: "PAUSED" } };
-    return claimWithWorktree(db, { who, ttlMs, now, repoRoot, stateDir, base: flags.base ?? activeConfig().defaultBranch, afterLeaseAcquired });
+    return claimLease(db, { who, ttlMs, now, stateDir, afterLeaseAcquired });
   } finally {
     db.close();
   }

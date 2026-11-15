@@ -12,7 +12,7 @@ const issue = (over: object = {}) => ({ number: 9, state: "OPEN", title: "Tidy t
 
 describe("campsty-auto authority classifier", () => {
   it("exposes the repository's configured domains through the public authority facade", () => {
-    expect(configuredDomains().map((domain) => domain.id)).toContain("payments");
+    expect(configuredDomains().map((domain: { id: string }) => domain.id)).toContain("payments");
   });
 
   it("lets an ordinary issue through and reports nothing", () => {
@@ -81,13 +81,14 @@ let tree: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "campsty-authority-"));
   stateDir = join(root, ".local", "auto");
-  tree = join(root, ".worktrees", "issue-9");
+  tree = join(root, "native-orca", "issue-9");
   git(root, "init", "-q", "-b", "main");
   git(root, "config", "user.email", "t@example.com");
   git(root, "config", "user.name", "t");
   writeFileSync(join(root, "a.txt"), "a");
   git(root, "add", "a.txt");
   git(root, "commit", "-q", "-m", "init");
+  git(root, "worktree", "add", "-q", "-b", "agent/issue-9", tree, "main");
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -98,11 +99,6 @@ const check = (args: string[], over: { fetchIssue?: () => object; fetchPr?: (n: 
   runCommand(["auth-check", "--issue", "9", ...args], { repoRoot: root, stateDir, now: NOW, clock: over.clock ?? (() => NOW), fetchIssue: over.fetchIssue ?? (() => ({ ok: true, issue: issue() })), fetchPr: over.fetchPr ?? pr() } as never);
 const lease = ["--owner", "claude", "--run", "r1"];
 const status = () => runCommand(["status", "--issue", "9"], { repoRoot: root, stateDir, now: NOW }).result.runs[0];
-const blocks = () => {
-  const out = runCommand(["status"], { repoRoot: root, stateDir, now: NOW });
-  return out.result.runs;
-};
-
 describe("campsty-auto auth-check", () => {
   it("answers CLEAR for an ordinary issue and an ordinary pull request, and says CLEAR is not approval", () => {
     claim();
@@ -113,14 +109,21 @@ describe("campsty-auto auth-check", () => {
     expect(status()).toMatchObject({ state: "CLAIMED", owner: "claude" });
   });
 
-  it("parks the issue and releases the lease when protected work needs the founder, keeping the evidence", () => {
+  it("parks protected work and preserves a bound dispatch for rejection cleanup", () => {
     claim();
+    expect(runCommand([
+      "bind-native", "--issue", "9", ...lease,
+      "--native-run", "native-run", "--task", "task-9", "--dispatch", "dispatch-9", "--worktree", tree,
+    ], { repoRoot: root, stateDir, now: NOW }).result).toMatchObject({ ok: true });
     const out = check(["--phase", "merge", "--pr", "50", ...lease], { fetchPr: pr({}, ["src/lib/payments/checkout-provider-types.ts"]) });
     expect(out).toMatchObject({ code: 1, result: { ok: false, result: "REQUIRES_FOUNDER", parked: true, state: "PARKED", stopReason: "FOUNDER_APPROVAL_REQUIRED", domains: ["payments"] } });
     expect(out.result.strong[0]).toMatchObject({ kind: "path", evidence: "src/lib/payments/checkout-provider-types.ts" });
-    expect(status()).toMatchObject({ state: "PARKED", stop_reason: "FOUNDER_APPROVAL_REQUIRED", owner: null });
-    // The parked issue cannot be claimed again by a retry.
+    expect(status()).toMatchObject({ state: "PARKED", stop_reason: "FOUNDER_APPROVAL_REQUIRED", owner: "claude", lease_expires_at: null, native_dispatch_id: "dispatch-9" });
+    // The parked issue cannot be claimed again by a retry, but the exact owner
+    // can unbind and release it after the native dispatch is stopped/abandoned.
     expect(claim()).toMatchObject({ code: 1, result: { code: "ISSUE_TERMINAL" } });
+    expect(runCommand(["unbind-native", "--issue", "9", ...lease, "--dispatch", "dispatch-9"], { repoRoot: root, stateDir, now: NOW + 1 }).result).toMatchObject({ ok: true });
+    expect(runCommand(["release", "--issue", "9", ...lease], { repoRoot: root, stateDir, now: NOW + 2 }).result).toMatchObject({ ok: true, run: { owner: null } });
   });
 
   it("continues after explicit approval in the same run and asks again for a newly detected domain", () => {

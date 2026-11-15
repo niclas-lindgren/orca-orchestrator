@@ -81,6 +81,15 @@ export function openState(dbPath) {
   if (!have.has("scope_fingerprint")) db.exec("ALTER TABLE runs ADD COLUMN scope_fingerprint TEXT");
   if (!have.has("comments_acked")) db.exec("ALTER TABLE runs ADD COLUMN comments_acked TEXT");
   if (!have.has("review_failures")) db.exec("ALTER TABLE runs ADD COLUMN review_failures INTEGER NOT NULL DEFAULT 0");
+  // A native Orca worker can outlive the coordinator lease. Persist its
+  // orchestration identity so an expired lease cannot authorize a second
+  // worker for the same issue. Clearing this binding is an explicit,
+  // owner-fenced operation after Orca proves the dispatch is no longer live.
+  if (!have.has("native_run_id")) db.exec("ALTER TABLE runs ADD COLUMN native_run_id TEXT");
+  if (!have.has("native_task_id")) db.exec("ALTER TABLE runs ADD COLUMN native_task_id TEXT");
+  if (!have.has("native_dispatch_id")) db.exec("ALTER TABLE runs ADD COLUMN native_dispatch_id TEXT");
+  if (!have.has("native_worktree")) db.exec("ALTER TABLE runs ADD COLUMN native_worktree TEXT");
+  if (!have.has("native_bound_at")) db.exec("ALTER TABLE runs ADD COLUMN native_bound_at INTEGER");
   db.exec(`CREATE TABLE IF NOT EXISTS repair_findings (
     issue INTEGER NOT NULL,
     run_id TEXT NOT NULL,
@@ -154,9 +163,12 @@ export function recordRepairAttempt(db, { issue, owner, runId, pr, headSha, keys
     const counts = () => Object.fromEntries([...new Set(keys)].sort().map((k) => [k, db.prepare("SELECT COUNT(*) AS n FROM finding_ledger WHERE issue = ? AND pr = ? AND key = ?").get(issue, pr, k).n]));
     if (!fresh.length) return { ok: true, already: true, counts: counts() };
     const park = (limit, finding = null) => {
+      // A bound native worker must remain exactly fenced so the coordinator can
+      // stop/abandon it, unbind its dispatch, then release the parked row.
+      const ownerAfter = current.native_dispatch_id ? owner : null;
       db.prepare(
-        "UPDATE runs SET state = 'PARKED', stop_reason = 'REPAIR_LIMIT', owner = NULL, lease_expires_at = NULL, updated_at = ? WHERE issue = ?",
-      ).run(now, issue);
+        "UPDATE runs SET state = 'PARKED', stop_reason = 'REPAIR_LIMIT', owner = ?, lease_expires_at = NULL, updated_at = ? WHERE issue = ?",
+      ).run(ownerAfter, now, issue);
       return { ok: false, code: "REPAIR_LIMIT", limit, ...(finding ? { finding } : {}), parked: true };
     };
     const over = fresh.find((k) => attempts(k) + 1 > MAX_FINDING_REPAIRS);
@@ -176,7 +188,10 @@ export function parkForFounder(db, { issue, owner, runId, phase, pr = null, head
   return immediate(db, () => {
     const current = row(db, issue);
     if (!current || !holds(current, owner, runId) || !leaseLive(current, now)) return { ok: false, code: "LEASE_LOST" };
-    db.prepare("UPDATE runs SET state = 'PARKED', stop_reason = 'FOUNDER_APPROVAL_REQUIRED', owner = NULL, lease_expires_at = NULL, updated_at = ? WHERE issue = ?").run(now, issue);
+    // Preserve the fenced owner while a native worker is bound so rejection can
+    // be followed by exact-dispatch stop/abandon, unbind and lease release.
+    const ownerAfter = current.native_dispatch_id ? owner : null;
+    db.prepare("UPDATE runs SET state = 'PARKED', stop_reason = 'FOUNDER_APPROVAL_REQUIRED', owner = ?, lease_expires_at = NULL, updated_at = ? WHERE issue = ?").run(ownerAfter, now, issue);
     db.prepare("INSERT INTO authority_blocks (issue, run_id, phase, pr, head_sha, detail, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(issue, runId, phase, pr, headSha, JSON.stringify(detail), now);
     return { ok: true, run: row(db, issue) };
   });
@@ -245,6 +260,18 @@ export function claimIssue(db, { issue, owner, runId, ttlMs = DEFAULT_TTL_MS, no
       // blocked until a person or the decision gate resolves it.
       return { ok: false, code: "ISSUE_TERMINAL", state: current.state };
     }
+    if (current?.native_dispatch_id && !holds(current, owner, runId)) {
+      return {
+        ok: false,
+        code: "NATIVE_BINDING_ACTIVE",
+        holder: current.owner,
+        runId: current.run_id,
+        nativeRunId: current.native_run_id,
+        taskId: current.native_task_id,
+        dispatchId: current.native_dispatch_id,
+        worktree: current.native_worktree,
+      };
+    }
     if (current && leaseLive(current, now) && !holds(current, owner, runId)) {
       return { ok: false, code: "LEASE_CONFLICT", holder: current.owner, expiresAt: current.lease_expires_at };
     }
@@ -268,6 +295,40 @@ export function claimIssue(db, { issue, owner, runId, ttlMs = DEFAULT_TTL_MS, no
       }
     }
     return { ok: true, run: row(db, issue) };
+  });
+}
+
+export function bindNativeWorker(db, { issue, owner, runId, nativeRunId, taskId, dispatchId, worktree, now = Date.now() }) {
+  return immediate(db, () => {
+    const current = row(db, issue);
+    if (!current || !holds(current, owner, runId) || !leaseLive(current, now)) return { ok: false, code: "LEASE_LOST" };
+    if (current.native_dispatch_id && current.native_dispatch_id !== dispatchId) {
+      const finalizingPending = current.native_dispatch_id.startsWith("pending:")
+        && current.native_run_id === nativeRunId
+        && current.native_task_id === taskId
+        && current.native_worktree === worktree
+        && !dispatchId.startsWith("pending:");
+      if (!finalizingPending) return { ok: false, code: "NATIVE_BINDING_ACTIVE", dispatchId: current.native_dispatch_id };
+    }
+    db.prepare(
+      "UPDATE runs SET native_run_id = ?, native_task_id = ?, native_dispatch_id = ?, native_worktree = ?, native_bound_at = ?, updated_at = ? WHERE issue = ?",
+    ).run(nativeRunId, taskId, dispatchId, worktree, now, now, issue);
+    return { ok: true, run: row(db, issue) };
+  });
+}
+
+export function unbindNativeWorker(db, { issue, owner, runId, dispatchId, now = Date.now() }) {
+  return immediate(db, () => {
+    const current = row(db, issue);
+    if (!current || !holds(current, owner, runId)) return { ok: false, code: "NOT_OWNER" };
+    if (!current.native_dispatch_id) return { ok: true, already: true, run: current };
+    if (current.native_dispatch_id !== dispatchId) {
+      return { ok: false, code: "DISPATCH_MISMATCH", expected: current.native_dispatch_id };
+    }
+    db.prepare(
+      "UPDATE runs SET native_run_id = NULL, native_task_id = NULL, native_dispatch_id = NULL, native_worktree = NULL, native_bound_at = NULL, updated_at = ? WHERE issue = ?",
+    ).run(now, issue);
+    return { ok: true, already: false, run: row(db, issue) };
   });
 }
 
@@ -347,6 +408,9 @@ export function releaseLease(db, { issue, owner, runId, now = Date.now() }) {
   return immediate(db, () => {
     const current = row(db, issue);
     if (!current || !holds(current, owner, runId)) return { ok: false, code: "NOT_OWNER" };
+    if (current.native_dispatch_id) {
+      return { ok: false, code: "NATIVE_BINDING_ACTIVE", dispatchId: current.native_dispatch_id };
+    }
     db.prepare("UPDATE runs SET owner = NULL, lease_expires_at = NULL, updated_at = ? WHERE issue = ?").run(now, issue);
     return { ok: true, run: row(db, issue) };
   });
@@ -358,7 +422,7 @@ export function recoverExpired(db, { now = Date.now() } = {}) {
   return immediate(db, () => {
     const stale = db
       .prepare(
-        `SELECT issue, state FROM runs WHERE state IN (${[...ACTIVE, "NEEDS_DECISION"].map(() => "?").join(",")}) AND owner IS NOT NULL AND lease_expires_at <= ?`,
+        `SELECT issue, state FROM runs WHERE state IN (${[...ACTIVE, "NEEDS_DECISION"].map(() => "?").join(",")}) AND owner IS NOT NULL AND lease_expires_at <= ? AND native_dispatch_id IS NULL`,
       )
       .all(...ACTIVE, "NEEDS_DECISION", now);
     for (const { issue, state } of stale) {

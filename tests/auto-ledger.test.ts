@@ -21,13 +21,14 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "campsty-ledger-"));
   scratch = mkdtempSync(join(tmpdir(), "campsty-ledger-files-"));
   stateDir = join(root, ".local", "auto");
-  tree = join(root, ".worktrees", "issue-9");
+  tree = join(root, "native-orca", "issue-9");
   git(root, "init", "-q", "-b", "main");
   git(root, "config", "user.email", "t@example.com");
   git(root, "config", "user.name", "t");
   writeFileSync(join(root, "a.txt"), "a");
   git(root, "add", "a.txt");
   git(root, "commit", "-q", "-m", "init");
+  git(root, "worktree", "add", "-q", "-b", "agent/issue-9", tree, "main");
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
@@ -75,8 +76,12 @@ describe("campsty-auto repair ledger for the in-session skills", () => {
     expect(ledger("50")).toMatchObject({ 50: { repairs: 1, findings: { [key]: { attempts: 1, heads: [h1] } } } });
   });
 
-  it("allows two repairs of one finding and parks the run on the third, from another head", () => {
+  it("allows two repairs and preserves a bound dispatch for exact cleanup when the third parks", () => {
     claim();
+    expect(runCommand([
+      "bind-native", "--issue", "9", "--owner", "claude", "--run", "r1",
+      "--native-run", "native-run", "--task", "task-9", "--dispatch", "dispatch-9", "--worktree", tree,
+    ], { repoRoot: root, stateDir, now: NOW }).result).toMatchObject({ ok: true });
     const h1 = commit("one");
     expect(record(h1, [p2()]).result.ok).toBe(true);
     const h2 = commit("repair one");
@@ -84,7 +89,9 @@ describe("campsty-auto repair ledger for the in-session skills", () => {
     const h3 = commit("repair two");
     const third = record(h3, [p2()]);
     expect(third).toMatchObject({ code: 1, result: { ok: false, code: "REPAIR_LIMIT", limit: "FINDING", parked: true, pr: 50, headSha: h3 } });
-    expect(status()).toMatchObject({ state: "PARKED", stop_reason: "REPAIR_LIMIT", owner: null });
+    expect(status()).toMatchObject({ state: "PARKED", stop_reason: "REPAIR_LIMIT", owner: "claude", lease_expires_at: null, native_dispatch_id: "dispatch-9" });
+    expect(runCommand(["unbind-native", "--issue", "9", "--owner", "claude", "--run", "r1", "--dispatch", "dispatch-9"], { repoRoot: root, stateDir, now: NOW + 1 }).result).toMatchObject({ ok: true });
+    expect(runCommand(["release", "--issue", "9", "--owner", "claude", "--run", "r1"], { repoRoot: root, stateDir, now: NOW + 2 }).result).toMatchObject({ ok: true, run: { owner: null } });
     // Nothing was written for the refused attempt.
     expect(ledger("50")[50].repairs).toBe(2);
   });

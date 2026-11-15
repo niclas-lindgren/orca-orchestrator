@@ -2,7 +2,7 @@
 // This is a cooperative Orca procedure, not GitHub branch protection.
 import { spawnSync } from "node:child_process";
 import { activeConfig, requireSetting } from "../config.mjs";
-import { worktreePathFor, branchFor } from "../auto/worktrees.mjs";
+import { resolveIssueWorktree, branchFor } from "../auto/worktrees.mjs";
 
 /**
  * @typedef {{status: number | null, stdout: string, stderr: string}} ExecResult
@@ -49,9 +49,12 @@ function snapshot(exec, root, worktree, issue, pr) {
   return { ok: true, head, base };
 }
 
-/** @param {{repoRoot: string, issue: number, pr: number, exec?: Exec}} options */
-export function verifyHead({ repoRoot, issue, pr, exec = defaultExec }) {
-  const worktree = worktreePathFor(repoRoot, issue);
+/** @param {{repoRoot: string, issue: number, pr: number, exec?: Exec, ownsLease?: () => boolean}} options */
+export function verifyHead({ repoRoot, issue, pr, exec = defaultExec, ownsLease = () => true }) {
+  if (!ownsLease()) return refuse("LEASE_LOST", "Issue lease is not held by this run");
+  const resolved = resolveIssueWorktree(repoRoot, issue, exec);
+  if (!resolved.ok) return refuse(resolved.code, resolved.error ?? `No worktree registered for ${resolved.branch}`);
+  const worktree = resolved.path;
   const before = snapshot(exec, repoRoot, worktree, issue, pr);
   if (!before.ok) return before;
   const fetched = exec("git", ["fetch", "origin", activeConfig().defaultBranch], worktree);
@@ -67,6 +70,7 @@ export function verifyHead({ repoRoot, issue, pr, exec = defaultExec }) {
   }
   const after = snapshot(exec, repoRoot, worktree, issue, pr);
   if (!after.ok) return after;
+  if (!ownsLease()) return refuse("LEASE_LOST", "Issue lease expired during verification");
   if (before.head !== after.head || before.base !== after.base)
     return refuse("PR_CHANGED_DURING_VERIFICATION", "Head or base changed; rerun the gate");
   return { ok: true, issue, pr, head: after.head, base: after.base, verified: gate.label };
