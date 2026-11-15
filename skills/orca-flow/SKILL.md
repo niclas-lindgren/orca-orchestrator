@@ -339,6 +339,22 @@ Delete only the ChatGPT chats this flow created (review and consult chats), and 
 - `review-delete` verifies the deletion itself; trust its `ok`, not a click result.
 - Never delete a chat whose first message the flow did not send, even if its title looks similar.
 
+## 11. Capture bounded learning evidence (best effort)
+
+At the end of a delivered issue or a documented blocker, if an issue and this session\'s run-id
+are known, record **one** terminal observation with `npm exec -- orca-orchestrator learn record --input <file>`.
+Create the JSON file outside the repository from verified facts only: `runId`, `issue`, optional
+40-character `headSha`, `outcome` (`merged`, `blocked`, `failed`), optional measured non-negative `durationMs`,
+optional `costUsd`, and up to 100 `findings` entries (`category`, `key`, `severity`).
+The allowed categories are `review`, `qa`, `workflow`, `tool`, and `security`; each key must
+be a stable lowercase non-secret identifier. Use a unique run-id per issue-run. Never include
+raw model transcripts, chat text, credentials, log excerpts, PII, or arbitrary issue text.
+If timing or cost was not measured, omit `durationMs` or `costUsd` respectively; never
+invent measurements. A failed learning write is reported but never changes merge eligibility,
+recovery ownership, or the final delivery verdict. Learning is evidence only, not authorization.
+`learn propose` produces **read-only hypotheses**; do not auto-apply changes to safety rules,
+reviews, gates, or policy from these hypotheses. Re-evaluate suggestions independently.
+
 ## When stuck: consult ChatGPT
 
 Whenever the flow reaches a point without a known next action, consult ChatGPT before you

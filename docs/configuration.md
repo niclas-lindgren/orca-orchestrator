@@ -13,6 +13,11 @@ tools and skills hold no repository-specific constants. Create a starter with `o
 | `workerInstructions` | optional | Lines added to the worker task, for example "Follow AGENTS.md and the docs it routes to." |
 | `protectedDomains` | `auth-check` | Kinds of change that need a human decision (see below). With none configured nothing is ever flagged: configure them. |
 
+The `learn` commands reuse the configured `stateDir` and repository slug (the repo from
+`repo` or `origin`). They store observations in `stateDir/learning.db`. Observations are
+segregated by repository even if a state directory is shared; no learning settings grant
+permission to bypass protected-domain checks. See [learning.md](learning.md).
+
 ## Protected domains
 
 ```json
