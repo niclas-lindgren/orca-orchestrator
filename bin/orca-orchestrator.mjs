@@ -2,7 +2,7 @@
 // Single entry point:
 //   orca-orchestrator auto <command> ...    lease, worktree, authority and repair-ledger commands
 //   orca-orchestrator orca <command> ...    dispatch, verify-head, cleanup and the ChatGPT review browser
-//   orca-orchestrator learn record|report|propose|evaluate   append-only evidence, hypotheses, and pinned replay evaluation
+//   orca-orchestrator learn record|report|propose|packet|evaluate   append-only evidence, hypotheses, and pinned replay evaluation
 //   orca-orchestrator init                  write a starter orca.config.json in the current repository
 //   orca-orchestrator install-skills [--dir <dir>]   copy the shipped skills into the repository (default .agents/skills)
 //   orca-orchestrator check-skills   [--dir <dir>]   exit 1 if the installed skills differ from the shipped ones

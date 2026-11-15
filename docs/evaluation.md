@@ -95,6 +95,17 @@ and independently verified merge/policy outcomes.
 - The evaluator never edits or promotes code and never writes to the learning
   database. Adding candidate scoring or promotion requires a separately reviewed PR.
 
+## PR contract replay CI
+
+`.github/workflows/replay.yml` checks proposed changes using two exact SHA checkouts and a
+separate trusted checkout of the PR **base** commit. The candidate does not provide its own
+scoring code or fixtures to this job. Each checkout disables persisted GitHub credentials,
+and the workflow has read-only repository permissions. This is still not an OS sandbox;
+use disposable runners without privileged secrets. Protect the workflow and required
+check using branch rules/code owner review outside the improvement agent’s credentials.
+It must never be possible to satisfy a required replay check merely by removing it from
+a candidate branch. The workflow is not a replacement for the fresh-head review gate.
+
 ## Next steps
 
 1. Execute realistic agent tasks in fresh disposable worktrees, with mocked

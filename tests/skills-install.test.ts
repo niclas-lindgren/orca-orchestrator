@@ -11,8 +11,8 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("skills install", () => {
-  it("ships orca-flow and orca-fleet", () => {
-    expect(shippedSkills().sort()).toEqual(["orca-fleet", "orca-flow"]);
+  it("ships flow, fleet and improvement proposer skills", () => {
+    expect(shippedSkills().sort()).toEqual(["orca-fleet", "orca-flow", "orca-improve"]);
   });
   it("copies every shipped skill and then checks clean", () => {
     expect(installSkills(dir)).toMatchObject({ ok: true });

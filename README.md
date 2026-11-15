@@ -8,10 +8,15 @@ issue, claimed worktrees, a protected-domain authority check, a repair ledger wi
 one supervised worker per issue, independent final-head verification, worktree cleanup, and a guarded
 ChatGPT review browser (open, send, wait, read, delete-only-what-you-sent).
 
-**Learning (proposal-only)** (`orca-orchestrator learn record|report|propose`): captures bounded,
+**Learning (proposal-only)** (`orca-orchestrator learn record|report|propose|packet`): captures bounded,
 structured run outcomes in a repository-scoped SQLite store, reports recurring review/QA/workflow
 failures, and suggests investigations. It never runs agents, changes gates, creates issues or PRs,
 or updates its own code. See [docs/learning.md](docs/learning.md).
+
+**Improvement proposer** (`orca-improve`): a separate Pi skill turns a recurring, aggregate-only
+learning packet into a narrowly scoped candidate and draft PR in the shared package. It never
+self-approves, auto-merges, or weakens the independent evaluation gate. See
+[docs/improving.md](docs/improving.md).
 
 **Replay evaluation** (`orca-orchestrator learn evaluate`): compares pinned clean baseline and
 candidate checkouts against a single trusted, bounded fixture suite. Includes regression and

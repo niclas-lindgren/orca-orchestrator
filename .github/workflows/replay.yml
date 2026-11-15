@@ -1,0 +1,44 @@
+name: Contract replay
+on:
+  pull_request:
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Three separate checkouts. The trusted evaluator and fixtures come from
+      # the target branch, never from candidate changes in the PR.
+      - name: Checkout trusted evaluator from base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+      - name: Checkout baseline at exact base SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+          persist-credentials: false
+      - name: Checkout candidate at exact PR head SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Replay canonical safety contracts
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node trusted/bin/orca-orchestrator.mjs learn evaluate \
+            --suite trusted/evals/replay-v1.json \
+            --baseline baseline --baseline-sha "$BASE_SHA" \
+            --candidate candidate --candidate-sha "$HEAD_SHA"
