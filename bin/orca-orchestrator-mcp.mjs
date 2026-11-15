@@ -10,7 +10,7 @@ const cwd = process.env.ORCA_REPO_ROOT || process.env.CLAUDE_PROJECT_DIR || proc
 const allowed = {
   auto: new Set([
     "status", "claim", "renew", "release", "recover", "pause", "resume",
-    "auth-check", "founder-resume", "repair-record", "repair-status",
+    "auth-check", "founder-status", "founder-resume", "repair-record", "repair-status",
     "bind-native", "unbind-native",
   ]),
   orca: new Set(["verify-head", "cleanup", "review-open", "review-send", "review-wait", "review-read", "review-delete"]),
