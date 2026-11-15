@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { activeConfig, repoSlug } from "../config.mjs";
+import { createImprovementPacket } from "./packet.mjs";
 
 const OUTCOMES = new Set(["merged", "blocked", "failed"]);
 const CATEGORIES = new Set(["review", "qa", "workflow", "tool", "security"]);
@@ -192,14 +193,17 @@ function flagsFrom(args, keys) {
 
 export function runLearn(argv, { repoRoot }) {
   const [command, ...rest] = argv;
-  if (!["record", "report", "propose"].includes(command))
-    return invalid("usage: learn <record --input file|report|propose [--min-occurrences N]>");
+  if (!["record", "report", "propose", "packet"].includes(command))
+    return invalid("usage: learn <record --input file|report|propose [--min-occurrences N]|packet --id category:key [--min-occurrences N]>");
   const parsed = flagsFrom(rest, command === "record" ? ["--input"] :
+    command === "packet" ? ["--id", "--min-occurrences"] :
     command === "propose" ? ["--min-occurrences"] : []);
   if (parsed.error) return invalid(parsed.error);
   const flags = parsed.flags;
   if (command === "record" && !flags["--input"])
     return invalid("record requires --input <json-file>");
+  if (command === "packet" && !flags["--id"])
+    return invalid("packet requires --id <category:key>");
   let observation;
   if (command === "record") {
     try {
@@ -225,8 +229,9 @@ export function runLearn(argv, { repoRoot }) {
       return { code: result.ok ? 0 : 1, result: { ...result, repo } };
     }
     const result = command === "report" ? learningReport(db, repo) :
+      command === "packet" ? createImprovementPacket(db, repo, flags["--id"], { minOccurrences: minimum }) :
       learningProposals(db, repo, { minOccurrences: minimum });
-    return { code: 0, result: { ok: true, ...result } };
+    return { code: result.ok === false ? 1 : 0, result: command === "packet" ? result : { ok: true, ...result } };
   } catch (error) {
     return { code: 1, result: { ok: false, code: "LEARN_UNAVAILABLE", error: String(error?.message ?? error) } };
   } finally {

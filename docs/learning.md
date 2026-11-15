@@ -34,6 +34,7 @@ A new terminal attempt needs a new run ID.
 orca-orchestrator learn record --input /tmp/orca-run.json
 orca-orchestrator learn report
 orca-orchestrator learn propose --min-occurrences 3
+orca-orchestrator learn packet --id review:tenant-boundary --min-occurrences 3
 ```
 
 The CLI prints one JSON response per command. `report` includes run outcome totals, averages
@@ -59,6 +60,15 @@ by frequency and highest severity, with investigation hypotheses labeled
   any proposed change.
 - If local learning persistence fails, it must not affect worktree/lease ownership,
   authority decisions, review requirements, verification or merge eligibility.
+
+## Improvement agent handoff
+
+`learn packet` generates a deterministic, aggregate-only, read-only proposal packet with a
+fingerprint of its source observations. It omits run IDs, issue numbers and commit SHAs.
+The source repository name and finding identifier can nevertheless be sensitive: do not
+paste a private project packet into a public PR without user permission. A separate
+`orca-improve` Pi agent may turn a validated proposal into a **draft PR only**, using
+[improving.md](improving.md). It does not run continuously or merge itself.
 
 ## Contract evaluation
 
