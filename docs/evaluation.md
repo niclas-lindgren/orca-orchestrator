@@ -30,14 +30,16 @@ node bin/orca-orchestrator.mjs learn evaluate \
 The command exits 0 only when every candidate case matches the fixed expected
 output. It emits a single JSON document containing:
 
-- The full baseline and candidate SHA, plus the SHA-256 digest of the suite file.
+- The full trusted evaluator, baseline and candidate SHA, plus the SHA-256 digest of the suite file.
 - Per-case baseline and candidate pass/fail and one of `PASS`, `IMPROVED`,
   `REGRESSION`, or `UNRESOLVED`.
 - Aggregate pass, improvement, regression, unresolved and safety-failure counts.
 - A clear note that this verdict is **not** a merge authorization.
 
-Both checkouts must start and finish clean and remain on the requested commits.
-The runner refuses missing, moved or dirty checkouts. It executes a bounded,
+The trusted evaluator and both target checkouts must start and finish clean; target
+checkouts must remain on the exact requested commits. The evaluator must be a third,
+distinct checkout; the runner refuses missing, moved or dirty checkouts and detects
+changes to the trusted suite during evaluation. It executes a bounded,
 allowlisted probe worker separately for each version with a 30-second timeout,
 a bounded output buffer, and a deliberately limited inherited environment.
 

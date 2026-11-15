@@ -14,6 +14,7 @@ const TIERS = new Set(["safety", "quality"]);
 const MAX_SUITE_BYTES = 512 * 1024;
 const MAX_CASES = 200;
 const WORKER = fileURLToPath(new URL("./replay-worker.mjs", import.meta.url));
+const EVALUATOR_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 const refusal = (code, error) => ({ code: 1, result: { ok: false, code, error } });
 const invalid = (error) => ({ code: 2, result: { ok: false, code: "INVALID_ARGS", error } });
@@ -185,6 +186,14 @@ export function runEvaluation(argv, { evaluate = runProbes } = {}) {
   if (candidate.error) return refusal("CANDIDATE_INVALID", candidate.error);
   if (baseline.dir === candidate.dir)
     return invalid("baseline and candidate must be distinct checkout directories");
+  const evaluatorSha = execGit(EVALUATOR_ROOT, ["rev-parse", "HEAD"]);
+  if (!evaluatorSha || !SHA.test(evaluatorSha))
+    return refusal("EVALUATOR_INVALID", "trusted evaluator is not a Git checkout");
+  const evaluator = checkCheckout(EVALUATOR_ROOT, evaluatorSha);
+  if (evaluator.error)
+    return refusal("EVALUATOR_INVALID", evaluator.error);
+  if (evaluator.dir === baseline.dir || evaluator.dir === candidate.dir)
+    return refusal("EVALUATOR_INVALID", "evaluator must be separate from both probed checkouts");
   const suiteHash = createHash("sha256").update(bytes).digest("hex");
   const before = { baselineSha: flags["--baseline-sha"], candidateSha: flags["--candidate-sha"] };
   const old = evaluate(baseline.dir, checked.suite.cases);
@@ -193,13 +202,19 @@ export function runEvaluation(argv, { evaluate = runProbes } = {}) {
   if (next.error) return refusal("CANDIDATE_PROBE_FAILED", next.error);
   // A probe must not change a checkout, even without changing the head commit.
   if (checkCheckout(baseline.dir, before.baselineSha).error ||
-      checkCheckout(candidate.dir, before.candidateSha).error)
-    return refusal("CHECKOUT_CHANGED", "checkout changed during replay");
+      checkCheckout(candidate.dir, before.candidateSha).error ||
+      checkCheckout(evaluator.dir, evaluatorSha).error)
+    return refusal("CHECKOUT_CHANGED", "candidate, baseline or trusted evaluator changed during replay");
+  let suiteAfter;
+  try { suiteAfter = readFileSync(flags["--suite"]); }
+  catch { return refusal("SUITE_CHANGED", "suite became unreadable during replay"); }
+  if (createHash("sha256").update(suiteAfter).digest("hex") !== suiteHash)
+    return refusal("SUITE_CHANGED", "trusted suite changed during replay");
   const compared = compareResults(checked.suite, old.results, next.results);
   const result = {
     ok: compared.eligible,
     verdict: compared.eligible ? "EVAL_PASS" : "EVAL_FAIL",
-    ...before, suiteSha256: suiteHash,
+    ...before, evaluatorSha, suiteSha256: suiteHash,
     ...compared,
     note: "Contract replay only; this does not benchmark real agent delivery or authorize merge.",
   };
