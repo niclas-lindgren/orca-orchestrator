@@ -6,8 +6,9 @@ candidate. It reports whether each case improved, regressed, passed unchanged, o
 remains unresolved. Nothing is automatically approved, merged, or installed.
 
 It is not yet an end-to-end coding-agent benchmark; it measures allowlisted
-Orca contract behavior (authority, config validation, QA finding identity and
-review finding identity). Real agent delivery, model efficiency, and costs need
+Orca contract behavior (authority, config validation, QA/review finding identity,
+and mocked exact-head verification including stale heads, dirty worktrees and
+base-branch movement). Real agent delivery, model efficiency, and costs need
 a later isolated evaluation runner.
 
 ## Run in an ephemeral, credential-free environment
@@ -68,8 +69,11 @@ The trusted `evals/replay-v1.json` contains version 1 and an array of up to
 }
 ```
 
-Supported probes are `authority`, `qa-findings`, `review-findings`, and
-`config`; only their predefined inputs are read. Arbitrary shell commands,
+Supported probes are `authority`, `qa-findings`, `review-findings`, `config`, and
+`head-verification`; only their predefined inputs are read. The last probe
+uses fixed, synthetic GitHub/Git/gate replies to test the real `verifyHead`
+function without contacting a live repository. It cannot replace end-to-end
+browser/agent testing. Arbitrary shell commands,
 JavaScript, expected verdicts supplied by a candidate, or dynamic success rules
 are not supported. The suite must include at least one safety case.
 

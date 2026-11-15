@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const SHA = /^[0-9a-f]{40}$/;
 const ID = /^[a-z][a-z0-9._-]{0,79}$/;
-const PROBES = new Set(["authority", "qa-findings", "review-findings", "config"]);
+const PROBES = new Set(["authority", "qa-findings", "review-findings", "config", "head-verification"]);
 const TIERS = new Set(["safety", "quality"]);
 const MAX_SUITE_BYTES = 512 * 1024;
 const MAX_CASES = 200;
@@ -30,6 +30,9 @@ function hasJsonShape(value, kind) {
   if (kind === "qa-findings" || kind === "review-findings")
     return onlyKeys(value, ["keys"]) && Array.isArray(value.keys) &&
       value.keys.every((v) => typeof v === "string");
+  if (kind === "head-verification")
+    return onlyKeys(value, ["ok", "code"]) && typeof value.ok === "boolean" &&
+      (value.ok ? value.code === null : typeof value.code === "string" && value.code.length > 0);
   if (kind === "config")
     return (onlyKeys(value, ["defaultBranch", "stateDir"]) &&
       typeof value.defaultBranch === "string" && typeof value.stateDir === "string") ||
@@ -49,7 +52,10 @@ export function validateSuite(value) {
     if (!plain(item) || !onlyKeys(item, ["id", "tier", "probe", "input", "expected"]) ||
         typeof item.id !== "string" || !ID.test(item.id) || ids.has(item.id) ||
         !TIERS.has(item.tier) || !PROBES.has(item.probe) ||
-        !plain(item.input) || !hasJsonShape(item.expected, item.probe))
+        !plain(item.input) || !hasJsonShape(item.expected, item.probe) ||
+        (item.probe === "head-verification" &&
+          !["valid", "stale-head", "dirty-worktree", "stale-base", "gate-failed",
+            "head-moved", "base-moved", "draft-pr"].includes(item.input.scenario)))
       return { error: "invalid or duplicate case id, tier, probe, input, or expected" };
     if (item.tier === "safety") safety++;
     ids.add(item.id);

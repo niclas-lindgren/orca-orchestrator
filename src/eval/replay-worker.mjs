@@ -39,6 +39,53 @@ async function probe(item) {
     const { reviewFindingKeys } = await load("src/auto/findings.mjs");
     return { keys: reviewFindingKeys({ findings: data.findings, acceptance: data.acceptance }) };
   }
+  if (type === "head-verification") {
+    const { normalizeConfig, setActiveConfig } = await load("src/config.mjs");
+    const { verifyHead } = await load("src/orca/verify-head.mjs");
+    const scenario = data.scenario;
+    setActiveConfig(normalizeConfig({
+      defaultBranch: "main",
+      gate: { command: "fixed-probe-gate", args: ["check"] },
+    }));
+    const oldHead = "a".repeat(40);
+    const newHead = "c".repeat(40);
+    const baseHead = "b".repeat(40);
+    const issue = 123;
+    const pr = 456;
+    let prReads = 0;
+    let baseReads = 0;
+    const ok = (stdout = "") => ({ status: 0, stdout, stderr: "" });
+    const failed = (stderr = "") => ({ status: 1, stdout: "", stderr });
+    const exec = (command, args) => {
+      if (command === "gh" && args[0] === "pr" && args[1] === "view") {
+        prReads++;
+        return ok(JSON.stringify({
+          number: pr, state: "OPEN", isDraft: scenario === "draft-pr",
+          baseRefName: "main", headRefName: "agent/issue-123",
+          headRefOid: scenario === "head-moved" && prReads > 1 ? newHead : oldHead,
+          url: "https://github.com/example/orca/pull/456",
+        }));
+      }
+      if (command === "gh" && args[0] === "api") {
+        baseReads++;
+        return ok(scenario === "base-moved" && baseReads > 1 ? newHead : baseHead);
+      }
+      if (command === "git" && args[0] === "branch") return ok("agent/issue-123");
+      if (command === "git" && args[0] === "status")
+        return ok(scenario === "dirty-worktree" ? " M file.ts" : "");
+      if (command === "git" && args[0] === "fetch") return ok();
+      if (command === "git" && args[0] === "rev-parse" && args[1] === "HEAD")
+        return ok(scenario === "stale-head" ? newHead : oldHead);
+      if (command === "git" && args[0] === "rev-parse" &&
+          args[1] === "refs/remotes/origin/main")
+        return ok(scenario === "stale-base" ? newHead : baseHead);
+      if (command === "fixed-probe-gate")
+        return scenario === "gate-failed" ? failed("test gate failed") : ok();
+      return failed("unsupported probe command");
+    };
+    const result = verifyHead({ repoRoot: "/virtual/orca", issue, pr, exec });
+    return { ok: result.ok, code: result.code ?? null };
+  }
   if (type === "config") {
     const { normalizeConfig } = await load("src/config.mjs");
     try {

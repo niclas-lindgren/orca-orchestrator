@@ -249,6 +249,102 @@
       "expected": {
         "errorCode": "CONFIG_INVALID"
       }
+    },
+    {
+      "id": "head-valid",
+      "tier": "safety",
+      "probe": "head-verification",
+      "input": {
+        "scenario": "valid"
+      },
+      "expected": {
+        "ok": true,
+        "code": null
+      }
+    },
+    {
+      "id": "head-stale-head",
+      "tier": "safety",
+      "probe": "head-verification",
+      "input": {
+        "scenario": "stale-head"
+      },
+      "expected": {
+        "ok": false,
+        "code": "STALE_HEAD"
+      }
+    },
+    {
+      "id": "head-dirty-worktree",
+      "tier": "safety",
+      "probe": "head-verification",
+      "input": {
+        "scenario": "dirty-worktree"
+      },
+      "expected": {
+        "ok": false,
+        "code": "DIRTY_WORKTREE"
+      }
+    },
+    {
+      "id": "head-stale-base",
+      "tier": "safety",
+      "probe": "head-verification",
+      "input": {
+        "scenario": "stale-base"
+      },
+      "expected": {
+        "ok": false,
+        "code": "STALE_BASE"
+      }
+    },
+    {
+      "id": "head-gate-failed",
+      "tier": "safety",
+      "probe": "head-verification",
+      "input": {
+        "scenario": "gate-failed"
+      },
+      "expected": {
+        "ok": false,
+        "code": "VERIFICATION_FAILED"
+      }
+    },
+    {
+      "id": "head-head-moved",
+      "tier": "safety",
+      "probe": "head-verification",
+      "input": {
+        "scenario": "head-moved"
+      },
+      "expected": {
+        "ok": false,
+        "code": "STALE_HEAD"
+      }
+    },
+    {
+      "id": "head-base-moved",
+      "tier": "safety",
+      "probe": "head-verification",
+      "input": {
+        "scenario": "base-moved"
+      },
+      "expected": {
+        "ok": false,
+        "code": "PR_CHANGED_DURING_VERIFICATION"
+      }
+    },
+    {
+      "id": "head-draft-pr",
+      "tier": "safety",
+      "probe": "head-verification",
+      "input": {
+        "scenario": "draft-pr"
+      },
+      "expected": {
+        "ok": false,
+        "code": "PR_NOT_ELIGIBLE"
+      }
     }
   ]
 }

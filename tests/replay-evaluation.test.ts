@@ -57,6 +57,8 @@ describe("suite validation", () => {
     expect(validateSuite(suite([one(), one()])).error).toBeTruthy();
     expect(validateSuite(suite([one({ id: "case", tier: "quality" })])).error).toMatch(/safety/);
     expect(validateSuite(suite([one({ probe: "shell" })])).error).toBeTruthy();
+    expect(validateSuite(suite([one({ probe: "head-verification", input: { scenario: "unknown" },
+      expected: { ok: false, code: "STALE_HEAD" } })])).error).toBeTruthy();
     expect(validateSuite(suite([one({ expected: { ok: true } })])).error).toBeTruthy();
     expect(validateSuite({ version: 2, cases: [one()] }).error).toBeTruthy();
   });
