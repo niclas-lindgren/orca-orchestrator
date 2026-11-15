@@ -8,6 +8,11 @@ issue, claimed worktrees, a protected-domain authority check, a repair ledger wi
 one supervised worker per issue, independent final-head verification, worktree cleanup, and a guarded
 ChatGPT review browser (open, send, wait, read, delete-only-what-you-sent).
 
+**Learning (proposal-only)** (`orca-orchestrator learn record|report|propose`): captures bounded,
+structured run outcomes in a repository-scoped SQLite store, reports recurring review/QA/workflow
+failures, and suggests investigations. It never runs agents, changes gates, creates issues or PRs,
+or updates its own code. See [docs/learning.md](docs/learning.md).
+
 **Pi extension** (`extensions/orca.ts`): the read-only `orca_status` tool and
 `/orca-status [issue]` command expose lease/run inspection inside Pi. The same
 Pi package also loads the canonical skills below.
@@ -30,6 +35,14 @@ npm run check      # syntax check + the full test suite
 
 The tests include the safety rules the skills must keep (`tests/skills.test.ts`), so editing a skill
 can fail a test that names the rule it would weaken.
+
+## Learning pilot
+
+The coordinating session should submit one sanitized observation per completed or blocked
+issue-run (the `orca-flow` skill explains when). The engine deliberately does not infer success
+from a worker claim or substitute for independent review. A separate improvement agent may
+consume `learn propose`, but promotion requires independent evaluations and the existing review
+and authority gates. The initial release does not automate those downstream steps.
 
 ## Status
 

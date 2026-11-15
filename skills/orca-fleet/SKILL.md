@@ -124,6 +124,7 @@ As each worker finishes, move that issue through `orca-flow` steps 4-9, with the
 
 - For every merged issue run `npm run orca -- cleanup --issue <n>` and delete its flow-created ChatGPT chats with `review-delete` (step 10 of `orca-flow`), passing the exact first-message file recorded for that page. Keep issue, page id, chat URL and message file bound together in the scratch ledger and delete only pages in it. **Fail closed:** if this repo's `review-delete` does not itself enforce the first-message match (preflight check 4), do not delete anything; list every chat (issue, URL, first-message file) in the final report for the user to remove, and name the tooling gap. Never substitute a manual `review-read` comparison for the enforced check. `LIVE_SESSION` from cleanup usually means editor or language-server processes hold the worktree as their cwd: report it, do not force removal. Remove stale children so no orphan lineage remains in `orca worktree ps`.
 - Update or close each issue per `orca-flow` step 9; partial slices stay open with a comment naming what remains.
+- After each issue is finalized, capture one sanitized terminal observation using `orca-flow` step 11; learning failures never change lease or merge decisions.
 - Final report, one table: issue → PR → merge commit → verdict/findings fixed → chats deleted → issue action, followed by the fleet-level facts: which issues were serialized and why, anything dropped or handed off (with the exact code), lease or ledger anomalies, chats that could not be deleted, and anything skipped.
 
 ## Hard limits
