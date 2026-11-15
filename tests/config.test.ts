@@ -6,6 +6,8 @@ describe("config", () => {
   it("applies defaults and freezes the result", () => {
     const config = normalizeConfig({ gate: { command: "make", args: ["check"] } });
     expect(config.defaultBranch).toBe("main");
+    expect(config.autonomy).toEqual({ profile: "controlled-execution" });
+    expect(Object.isFrozen(config.autonomy)).toBe(true);
     expect(config.stateDir).toBe(".local/auto");
     expect(config.gate.label).toBe("make check");
     expect(Object.isFrozen(config)).toBe(true);
@@ -16,9 +18,18 @@ describe("config", () => {
     [{ protectedDomains: [{ id: "x", paths: ["("] }] }, /invalid pattern/],
     [{ protectedDomains: [{ labels: [] }] }, /id must be/],
     [{ workerInstructions: "no" }, /workerInstructions/],
+    [{ autonomy: "product-manager" }, /autonomy must be/],
+    [{ autonomy: { profile: "admin" } }, /autonomy must be/],
+    [{ autonomy: { profile: "product-manager", dispatchUnsolicitedWork: true } }, /autonomy must be/],
+    [{ autonomy: { profile: "controlled-execution", createIssues: true } }, /autonomy must be/],
     ["not an object", /JSON object/],
   ])("rejects an invalid config %#", (raw, message) => {
     expect(() => normalizeConfig(raw as never)).toThrow(message);
+  });
+  it("accepts explicit, immutable product-manager intent without permission booleans", () => {
+    const config = normalizeConfig({ autonomy: { profile: "product-manager" } });
+    expect(config.autonomy).toEqual({ profile: "product-manager" });
+    expect(Object.isFrozen(config.autonomy)).toBe(true);
   });
   it("names the missing setting when a command needs one", () => {
     setActiveConfig(normalizeConfig({}));

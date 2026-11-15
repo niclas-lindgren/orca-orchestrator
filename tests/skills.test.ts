@@ -57,6 +57,13 @@ describe("orca-flow", () => {
 });
 
 describe("orca-fleet", () => {
+  it("keeps product autonomy observational until trusted mediation exists", () => {
+    expect(fleet).toContain("controlled-execution");
+    expect(fleet).toContain("product-manager");
+    expect(fleet).toContain("profile is not permission");
+    expect(fleet).toContain("operator-requested");
+    expect(fleet).toContain("trusted action-mediation");
+  });
   it("defers to orca-flow on every safety rule", () => {
     expect(fleet).toMatch(/`orca-flow` wins/);
   });

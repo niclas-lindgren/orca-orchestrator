@@ -21,6 +21,7 @@ const DEFAULTS = Object.freeze({
   stateDir: ".local/auto",
   workerInstructions: [],
   protectedDomains: [],
+  autonomy: Object.freeze({ profile: "controlled-execution" }),
 });
 
 /** Repository root for `cwd`. A linked worktree resolves to the main checkout. */
@@ -96,6 +97,15 @@ export function normalizeConfig(raw, { repoRoot = ".", origin = null } = {}) {
   }
   if (!Array.isArray(config.protectedDomains)) throw new ConfigError("CONFIG_INVALID", "protectedDomains must be an array");
   config.protectedDomains = config.protectedDomains.map(compileDomain);
+  // This profile is metadata for the upcoming trusted product-management adapter.
+  // Never treat a mutable checkout's config as proof of founder consent.
+  const autonomy = config.autonomy;
+  if (!autonomy || typeof autonomy !== "object" || Array.isArray(autonomy) ||
+      Object.keys(autonomy).some((key) => key !== "profile") ||
+      !["controlled-execution", "product-manager"].includes(autonomy.profile)) {
+    throw new ConfigError("CONFIG_INVALID", 'autonomy must be { "profile": "controlled-execution" | "product-manager" }');
+  }
+  config.autonomy = Object.freeze({ profile: autonomy.profile });
   config.repoRoot = repoRoot;
   config.origin = origin;
   return Object.freeze(config);
