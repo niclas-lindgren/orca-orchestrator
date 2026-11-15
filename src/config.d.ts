@@ -16,6 +16,11 @@ export interface ProtectedDomain {
   paths: RegExp[];
 }
 
+export interface AutonomyConfig {
+  /** Metadata only. Not authorization for any side effect. */
+  profile: "controlled-execution" | "product-manager";
+}
+
 export interface OrcaConfig {
   repo?: string;
   defaultBranch: string;
@@ -24,6 +29,7 @@ export interface OrcaConfig {
   review?: ReviewConfig;
   workerInstructions: string[];
   protectedDomains: ProtectedDomain[];
+  autonomy: AutonomyConfig;
   repoRoot: string;
   origin: string | null;
 }

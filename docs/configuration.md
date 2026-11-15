@@ -12,6 +12,7 @@ tools and skills hold no repository-specific constants. Create a starter with `o
 | `review.projectId` / `review.projectName` | all `review-*` commands | The ChatGPT project every review and consult chat must live in. The id is the `g-p-...` segment of the project URL. |
 | `workerInstructions` | optional | Lines added to the worker task, for example "Follow AGENTS.md and the docs it routes to." |
 | `protectedDomains` | `auth-check` | Kinds of change that need a human decision (see below). With none configured nothing is ever flagged: configure them. |
+| `autonomy.profile` | metadata (default: `controlled-execution`) | `product-manager` for proactive Campsty product discovery and proposal preparation, or `controlled-execution` for Hockey/operator-directed work. **Not a grant of write, dispatch, or merge authority.** |
 
 The `learn` commands reuse the configured `stateDir` and repository slug (the repo from
 `repo` or `origin`). They store observations in `stateDir/learning.db`. Observations are
@@ -40,3 +41,17 @@ path casing.
 ## Example
 
 `examples/camping-booking.orca.config.json` is a complete, real configuration.
+
+## Product autonomy profiles (initial, non-authorizing baseline)
+
+Specify one **named** profile. There are no individual booleans an agent can enable:
+
+```json
+{ "autonomy": { "profile": "controlled-execution" } }
+```
+
+The missing-profile default is `controlled-execution`. `product-manager` is intended for Campsty only, where the product coordinator may proactively research, run safe persona evaluations, prepare evidence-backed issue proposals and suggest priorities. `controlled-execution` is for Hockey, where any product discovery, issue creation, re-prioritization or implementation must remain inside an operator-requested scope.
+
+**This first change only validates and exposes repository intent; it does not enforce GitHub authorization.** The file is editable by agents in checkout worktrees; it is not a trusted authorization grant. Existing direct `gh`, shell, Pi, Claude and Orca commands are not blocked by this setting. Until a separate trusted decision boundary exists (tracked in the [authorization issue](https://github.com/niclas-lindgren/orca-orchestrator/issues/6)), **neither profile grants permission for autonomous GitHub writes, issue reprioritization, dispatch, merge, publication, or modification of safety rules**. A product agent must not infer authorization from this profile alone. The application must supply separately verified identity, actual scope, approvals and protected-domain checks before those actions.
+
+For rollout: set `product-manager` only in Campsty's `orca.config.json` and `controlled-execution` explicitly in Hockey's. Full product autonomy and native CLI migration are tracked in the [epic](https://github.com/niclas-lindgren/orca-orchestrator/issues/5), [native-Orca issue](https://github.com/niclas-lindgren/orca-orchestrator/issues/7), and [Campsty PM issue](https://github.com/niclas-lindgren/orca-orchestrator/issues/8).
