@@ -57,6 +57,13 @@ describe("orca-flow", () => {
 });
 
 describe("orca-fleet", () => {
+  it("keeps product autonomy observational until trusted mediation exists", () => {
+    expect(fleet).toContain("controlled-execution");
+    expect(fleet).toContain("product-manager");
+    expect(fleet).toContain("profile is not permission");
+    expect(fleet).toContain("operator-requested");
+    expect(fleet).toContain("trusted action-mediation");
+  });
   it("defers to orca-flow on every safety rule", () => {
     expect(fleet).toMatch(/`orca-flow` wins/);
   });
@@ -93,5 +100,25 @@ describe("orca-fleet", () => {
   it("carries the dispatch recovery table and refuses to delete a record blindly", () => {
     expect(fleet).toMatch(/DISPATCH_RECORD_EXISTS/);
     expect(fleet).toMatch(/Never delete it because `worker-list` shows no worker/);
+  });
+});
+
+describe("Claude Code plugin distribution", () => {
+  it("exposes the same canonical skills without a second copy", () => {
+    const readJson = (relativePath: string) =>
+      JSON.parse(readFileSync(join(__dirname, "..", relativePath), "utf8"));
+    const marketplace = readJson(".claude-plugin/marketplace.json");
+    const plugin = readJson(".claude-plugin/plugin.json");
+    const pkg = readJson("package.json");
+    expect(marketplace.plugins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: pkg.name, source: "./" }),
+      ]),
+    );
+    expect(plugin.name).toBe(pkg.name);
+    expect(plugin).not.toHaveProperty("version"); // Track new upstream commits, not manual releases
+    expect(pkg.pi.skills).toContain("./skills");
+    expect(read("orca-flow")).toMatch(/^---\nname: orca-flow/m);
+    expect(read("orca-fleet")).toMatch(/^---\nname: orca-fleet/m);
   });
 });

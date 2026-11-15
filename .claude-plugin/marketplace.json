@@ -1,0 +1,14 @@
+{
+  "name": "orca-orchestrator-marketplace",
+  "description": "Official shared Orca delivery skills",
+  "owner": {
+    "name": "Orca Orchestrator"
+  },
+  "plugins": [
+    {
+      "name": "orca-orchestrator",
+      "source": "./",
+      "description": "Shared orca-flow and orca-fleet workflows"
+    }
+  ]
+}
