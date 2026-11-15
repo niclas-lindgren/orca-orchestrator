@@ -341,7 +341,7 @@ Delete only the ChatGPT chats this flow created (review and consult chats), and 
 
 ## 11. Capture bounded learning evidence (best effort)
 
-At the end of a delivered issue or a documented blocker, if an issue and this session\'s run-id
+At the end of a delivered issue or a documented blocker, if an issue and this session's run-id
 are known, record **one** terminal observation with `npm exec -- orca-orchestrator learn record --input <file>`.
 Create the JSON file outside the repository from verified facts only: `runId`, `issue`, optional
 40-character `headSha`, `outcome` (`merged`, `blocked`, `failed`), optional measured non-negative `durationMs`,
