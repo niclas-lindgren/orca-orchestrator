@@ -109,7 +109,7 @@ describe("Claude Code plugin distribution", () => {
       ]),
     );
     expect(plugin.name).toBe(pkg.name);
-    expect(plugin.version).toBe(pkg.version);
+    expect(plugin).not.toHaveProperty("version"); // Track new upstream commits, not manual releases
     expect(pkg.pi.skills).toContain("./skills");
     expect(read("orca-flow")).toMatch(/^---\nname: orca-flow/m);
     expect(read("orca-fleet")).toMatch(/^---\nname: orca-fleet/m);

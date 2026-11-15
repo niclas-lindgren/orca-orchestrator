@@ -41,7 +41,7 @@ Updating Pi alone doesn't update npm's CLI. For safety, do not run new skill pro
 
 ## Claude Code: shared plugin, no copied skills
 
-This repository is also a Claude Code plugin marketplace. Register its GitHub source and install the `orca-orchestrator` plugin; or declare these project settings in `.claude/settings.json`:
+This repository is also a Claude Code plugin marketplace. The consuming repository declares the marketplace and enables the plugin in its `.claude/settings.json`:
 
 ```json
 {
@@ -55,7 +55,28 @@ This repository is also a Claude Code plugin marketplace. Register its GitHub so
 }
 ```
 
-Claude loads `skills/orca-flow` and `skills/orca-fleet` from the installed plugin. In Claude Code, they appear under `/orca-orchestrator:orca-flow` and `/orca-orchestrator:orca-fleet`. Plugin availability requires repository trust and successful marketplace/plugin installation; inspect `claude plugin list` if discovery fails. Plugin auto-updates follow Claude Code's own marketplace refresh policy and do not update the npm CLI.
+After trusting the repository, run the **one-time installation for that checkout** (a checked-in `enabledPlugins` entry does not download the plugin to the machine):
+
+```bash
+claude plugin install orca-orchestrator@orca-orchestrator-marketplace --scope project
+claude plugin list
+```
+
+If the marketplace was not registered yet, add it explicitly first:
+
+```bash
+claude plugin marketplace add niclas-lindgren/orca-orchestrator
+```
+
+Claude loads `skills/orca-flow` and `skills/orca-fleet` from the installed plugin as `/orca-orchestrator:orca-flow` and `/orca-orchestrator:orca-fleet`. Use `claude plugin details orca-orchestrator` to inspect the skills. It is not enough to see `enabledPlugins` in a settings file: confirm the package actually appears in `claude plugin list`.
+
+The plugin manifest intentionally **omits `version`**, so that Claude Code can detect new upstream commits when refreshing the marketplace rather than waiting for a separately bumped release number. Project `autoUpdate: true` requests automatic updates, but updates may be delayed or disabled by network and host settings. To request an immediate update run:
+
+```bash
+claude plugin update orca-orchestrator@orca-orchestrator-marketplace
+```
+
+Refreshing Claude's plugin does **not** update npm's locked CLI. Update and test that separately before using newly introduced CLI commands.
 
 ## Legacy installer
 
@@ -64,7 +85,7 @@ Claude loads `skills/orca-flow` and `skills/orca-fleet` from the installed plugi
 ## Updating safely
 
 1. Review upstream Orca changes, especially command contracts, authority checks, lease handling and review gating.
-2. Run `pi update --extensions` to refresh Pi's unpinned Git package. Update Claude plugins via Claude's plugin manager if needed.
+2. Run `pi update --extensions` to refresh Pi's unpinned Git package. For Claude use `claude plugin update orca-orchestrator@orca-orchestrator-marketplace`, or verify that the configured marketplace auto-update has applied.
 3. Update the npm CLI dependency and its lockfile in a reviewed application PR when new commands or behavior are required.
 4. Run the application's canonical gate and inspect the available skill and CLI commands before dispatching workers.
 

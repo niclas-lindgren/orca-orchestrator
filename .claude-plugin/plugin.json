@@ -1,5 +1,4 @@
 {
   "name": "orca-orchestrator",
-  "version": "0.2.1",
   "description": "Shared Orca issue-delivery and fleet skills"
 }
