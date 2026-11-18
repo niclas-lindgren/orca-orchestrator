@@ -29,7 +29,7 @@ Before selecting or claiming issues:
 
 1. Confirm clean coordinator checkout and read repository instructions plus `orca.config.json`.
 2. Confirm `gh auth status`.
-3. Confirm `"$ORCA" runtime status --json` and read the full orchestration skill.
+3. Confirm native Orca is reachable with `"$ORCA" status --json` and read the full orchestration skill.
 4. Call `GUARD auto status` to prove the installed adapter can load repository config/state.
 5. Confirm native Orca browser automation and fresh ChatGPT review are available.
 6. Run `GUARD auto recover`.
@@ -94,9 +94,7 @@ provisional durable binding **before** native Orca can start the worker:
    "$ORCA" orchestration worker-start \
      --task "$TASK_ID" \
      --worktree "$WORKTREE_SELECTOR" \
-     --name "issue-$ISSUE" \
      --agent "$AGENT" \
-     --setup run \
      --retry-request "$START_REQUEST" \
      --json
    ```
@@ -104,6 +102,8 @@ provisional durable binding **before** native Orca can start the worker:
    ```text
    GUARD auto bind-native --issue ISSUE --owner OWNER --run RUN_ID --native-run NATIVE_RUN --task TASK_ID --dispatch DISPATCH_ID --worktree WORKTREE_SELECTOR
    ```
+
+`--name`, `--repo`, `--base-branch`, `--display-name`, `--comment` and `--setup` are creation flags: Orca rejects them for an existing worktree, so this start passes none of them.
 
 The worker prompt must require branch `agent/issue-ISSUE`, issue acceptance tests,
 the configured gate, commits and push, and a handoff containing head SHA and
@@ -117,7 +117,7 @@ not to have started, unbind the exact `pending:START_REQUEST` before cleanup.
 Use native Orca state only:
 
 ```bash
-"$ORCA" orchestration run-show --run "$NATIVE_RUN" --json
+"$ORCA" orchestration run-show --id "$NATIVE_RUN" --json
 "$ORCA" orchestration worker-show --dispatch "$DISPATCH_ID" --json
 ```
 

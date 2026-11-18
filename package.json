@@ -1,6 +1,6 @@
 {
   "name": "orca-orchestrator",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Native Orca issue-delivery skills with repository guards for leases, authority, review, repair, exact-head verification, and cleanup.",
   "type": "module",
   "keywords": [

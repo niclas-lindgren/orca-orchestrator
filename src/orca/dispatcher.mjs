@@ -461,6 +461,14 @@ export function tick({ repoRoot, stateDir, exec = defaultExec, now = Date.now, n
   }
 }
 
+// Patches an existing dispatch record in place, keeping every field the reader
+// already wrote (state, failedStep, dispatchReceipt).
+function mergeRecord(file, patch) {
+  const read = readJson(file);
+  const current = read.ok && read.value && typeof read.value === "object" ? read.value : {};
+  writeAtomic(file, `${JSON.stringify({ ...current, ...patch })}\n`);
+}
+
 /**
  * Resumes dead workers for issues the dispatcher itself dispatched and that have
  * no pull request yet. The run is adopted by the new fenced identity first (the
@@ -490,8 +498,11 @@ function autoResume({ repoRoot, stateDir, exec, at, config, recon, free }) {
       skipped.push({ issue, reason: retries >= config.autoResumeMaxRetries ? `auto-resume retries exhausted (${retries})` : "dispatch record unreadable" });
       continue;
     }
-    const dispatchId = record?.dispatchReceipt?.dispatchId;
-    const taskId = record?.dispatchReceipt?.taskId;
+    // The record stores the CLI envelope the worker-start printed, so the ids sit
+    // under `result`; a flat receipt is still read for records written earlier.
+    const prior = record?.dispatchReceipt?.result ?? record?.dispatchReceipt ?? null;
+    const dispatchId = prior?.dispatchId;
+    const taskId = prior?.taskId;
     if (typeof dispatchId !== "string" || typeof taskId !== "string") {
       skipped.push({ issue, reason: "dispatch receipt has no Task to retry" });
       continue;
@@ -525,14 +536,16 @@ function autoResume({ repoRoot, stateDir, exec, at, config, recon, free }) {
     // The attempt is counted whether or not it started, and a refused start is
     // permanent: Orca circuit-breaks a retry chain after three failed starts and
     // a person alone may reopen it, so the dispatcher must not keep trying.
+    // The dispatch wrote its own state and receipt into the same record, so the
+    // patch is merged onto what is on disk now, never onto the pre-dispatch copy.
     if (receipt.ok) {
-      writeAtomic(recordFile, `${JSON.stringify({ ...record, runId, resumeRetries: retries + 1 })}\n`);
+      mergeRecord(recordFile, { runId, resumeRetries: retries + 1 });
       dispatched.push({ issue, runId, resumedFrom: entry.runId, retryOf: dispatchId });
       capacity -= 1;
       continue;
     }
     errors.push(`auto-resume #${issue}: ${receipt.code}`);
-    writeAtomic(recordFile, `${JSON.stringify({ ...record, resumeRetries: retries + 1, autoResumeStopped: receipt.code })}\n`);
+    mergeRecord(recordFile, { resumeRetries: retries + 1, autoResumeStopped: receipt.code });
     // Nothing started: put the run back so a person or the next tick sees it.
     execJson(exec, auto[0], [...auto.slice(1), "handover", "--issue", String(issue), "--owner", config.owner, "--run", runId], repoRoot);
     if (receipt.code === "ORCA_UNREACHABLE") break;

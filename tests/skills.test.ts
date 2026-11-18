@@ -170,4 +170,22 @@ describe("agent package distribution", () => {
     expect(mcp.mcpServers["orca-orchestrator"].args[0]).toContain("${CLAUDE_PLUGIN_ROOT}");
     expect(mcp.mcpServers["orca-orchestrator"].env.ORCA_REPO_ROOT).toBe("${CLAUDE_PROJECT_DIR}");
   });
+
+  it("uses only native commands and flags that exist", () => {
+    const fleet = read("orca-fleet");
+    const flow = read("orca-flow");
+    for (const text of [fleet, flow]) {
+      // `orca runtime status` was never a command; readiness is `orca status --json`.
+      expect(text).not.toContain('"$ORCA" runtime status');
+    }
+    // run-show takes --id, not --run.
+    expect(fleet).toContain('orchestration run-show --id "$NATIVE_RUN"');
+    expect(fleet).not.toContain("run-show --run");
+    // Creation flags are rejected for an existing worktree, so the fleet start passes none.
+    const start = fleet.slice(fleet.indexOf("--task \"$TASK_ID\""));
+    const block = start.slice(0, start.indexOf("--json"));
+    for (const flag of ["--name", "--setup", "--repo", "--base-branch", "--display-name", "--comment"]) {
+      expect(block).not.toContain(flag);
+    }
+  });
 });

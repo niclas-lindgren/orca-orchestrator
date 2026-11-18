@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2 - 2026-11-18
+
+- Fix dispatcher auto-resume reading the stored `worker-start` receipt: it is the CLI envelope, so `dispatchId`/`taskId` live under `result`. A resumed record now carries the new receipt instead of the dead one, and an unconfirmed start is no longer rewritten as `started`.
+- Fix `orca-fleet`: `worker-start` on an existing worktree must not pass `--name`/`--setup` (Orca rejects creation flags there), and `run-show` takes `--id`, not `--run`.
+- Fix the readiness probe in both skills and `docs/installing.md`: `orca status --json`, not `orca runtime status` (not a command).
+- Add a skills test that pins these native command and flag contracts.
+
 ## 0.4.1 - 2026-11-18
 
 - De-duplicate against native Orca: `resume-report` prints Orca's own `next` for each worker instead of restating a recovery sequence, and names `run-use` as the native coordinator binding alongside `auto adopt` (the lease transfer).

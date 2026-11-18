@@ -19,7 +19,7 @@ Consumer repositories do **not** install `orca-orchestrator` as an npm dependenc
 Verify native Orca before installation:
 
 ```bash
-"${ORCA_CLI_COMMAND:-orca}" runtime status --json
+"${ORCA_CLI_COMMAND:-orca}" status --json
 "${ORCA_CLI_COMMAND:-orca}" skills get orchestration --full
 ```
 

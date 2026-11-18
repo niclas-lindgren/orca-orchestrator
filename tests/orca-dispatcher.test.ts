@@ -185,7 +185,7 @@ describe("dispatcher tick", () => {
   describe("auto-resume of dead workers", () => {
     // An issue the dispatcher started, whose worker provably exited and whose
     // lease lapsed: exactly the state a lost coordinator leaves behind.
-    const seed = (w: ReturnType<typeof world>, { retries = 0, liveness = "exited", receipt = { dispatchId: "ctx_dead", taskId: "task_5" } } = {}) => {
+    const seed = (w: ReturnType<typeof world>, { retries = 0, liveness = "exited", receipt = { ok: true, result: { state: "ready", dispatchId: "ctx_dead", taskId: "task_5" } } } = {}) => {
       w.state.leases.push({ issue: 5, owner: "dispatcher", run_id: "run-1", state: "IMPLEMENTING", lease_expires_at: NOW - 1 });
       w.state.workers = [{ dispatchId: "ctx_dead", taskId: "task_5", state: "failed", liveness, workspace: "ep::/repo/.worktrees/issue-5" }];
       const dir = join(stateDir, "orca-dispatch");
@@ -215,7 +215,12 @@ describe("dispatcher tick", () => {
       // The retry names the dead dispatch and its Task instead of a new spec.
       expect(w.state.workerStarts.at(-1)).toMatchObject({ retryOf: "ctx_dead", task: "task_5" });
       expect(w.state.workerStarts.at(-1)!.args).not.toContain("--spec");
-      expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ issue: 5, runId: report.dispatched[0].runId, state: "started", resumeRetries: 1 });
+      // The confirmed receipt from this start replaces the dead one, so the next
+      // resume retries the new dispatch rather than the old chain.
+      const written = JSON.parse(readFileSync(file, "utf8"));
+      expect(written).toMatchObject({ issue: 5, runId: report.dispatched[0].runId, state: "started", resumeRetries: 1 });
+      expect(written.dispatchReceipt.result.dispatchId).not.toBe("ctx_dead");
+      expect(written.dispatchReceipt.result.dispatchId).toMatch(/^ctx_/);
       expect(w.state.leases[0]).toMatchObject({ owner: "dispatcher", lease_expires_at: NOW + 3_600_000 });
     });
 
@@ -248,6 +253,13 @@ describe("dispatcher tick", () => {
       expect(w.state.workerStarts).toHaveLength(0);
     });
 
+    it("reads a flat receipt written by an earlier version", async () => {
+      enable({ maxWorkers: 2, autoResume: true });
+      const w = world({ issues: [] });
+      seed(w, { receipt: { dispatchId: "ctx_dead", taskId: "task_5" } });
+      expect((await run(w)).outcome).toBe("AUTO_RESUMED");
+    });
+
     it("needs a dispatch receipt to know which Task to retry", async () => {
       enable({ maxWorkers: 2, autoResume: true });
       const w = world({ issues: [] });
@@ -264,11 +276,14 @@ describe("dispatcher tick", () => {
       w.state.startOutcome = "fail";
       const first = await run(w);
       expect(first.errors).toContain("auto-resume #5: WORKER_START_FAILED");
-      expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ resumeRetries: 1, autoResumeStopped: "WORKER_START_FAILED" });
-      // The retry chain is Orca's to reopen: the next tick does not try again.
+      // The adapter's own state survives the patch: an unconfirmed start must not
+      // be rewritten as a normal started record.
+      expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ resumeRetries: 1, autoResumeStopped: "WORKER_START_FAILED", state: "unconfirmed" });
+      // The retry chain is Orca's to reopen: the next tick neither retries nor
+      // hides the unconfirmed start, which is reported for a person.
       w.state.startOutcome = "ready";
       const second = await run(w);
-      expect(second.skipped).toContainEqual({ issue: 5, reason: "auto-resume stopped after WORKER_START_FAILED; a person decides" });
+      expect(second.recoverableFailures).toContainEqual({ issue: 5, state: "unconfirmed" });
       expect(w.state.calls.filter((c) => c === "auto adopt")).toHaveLength(1);
     });
 

@@ -137,7 +137,9 @@ function claimRecord(plan, { resumeFromRunId = null } = {}) {
     if (resumeFromRunId === null || existing?.runId !== resumeFromRunId || existing?.state !== "started") {
       return { ok: false, code: "DISPATCH_RECORD_EXISTS", recordFile: plan.recordFile, existing };
     }
-    writeRecord(plan, "starting", { resumeRetries: existing.resumeRetries ?? 0, resumedFrom: { runId: existing.runId, dispatchId: existing.dispatchReceipt?.dispatchId ?? null } });
+    // The stored receipt is the CLI envelope, so the ids sit under `result`.
+    const prior = existing.dispatchReceipt?.result ?? existing.dispatchReceipt ?? null;
+    writeRecord(plan, "starting", { resumeRetries: existing.resumeRetries ?? 0, resumedFrom: { runId: existing.runId, dispatchId: prior?.dispatchId ?? null } });
     return { ok: true, resumed: true, existing };
   }
 }

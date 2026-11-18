@@ -43,7 +43,7 @@ Fail closed before claiming anything.
    ```
 2. Read repository instructions and `orca.config.json`. The configured gate is mandatory.
 3. Confirm GitHub auth: `gh auth status`.
-4. Confirm native Orca is reachable: `"$ORCA" runtime status --json`.
+4. Confirm native Orca is reachable: `"$ORCA" status --json` (`runtime status` is not a command).
 5. Confirm the adapter is installed by calling `GUARD auto status`.
 6. Confirm browser review is available. Browser degradation, missing adapter, unavailable Orca, missing config, or failed GitHub auth means stop before claim.
 
