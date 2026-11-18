@@ -4,6 +4,7 @@
 
 - Add `orca resume-report --issue N`: a read-only join of lease store, Git, GitHub and native Orca that names the resume scenario and the commands for it.
 - Add `auto handover` and `auto adopt`: fenced, audited transfer of an issue's run (including a native worker binding) to a new coordinator; keeps position, attempts and repair counters, does not inherit founder approvals.
+- `resume-report`: recreating a worktree for an existing branch now always names `--base-branch`, because `--branch` alone makes a new branch from the default base and leaves the existing commits behind (verified on Orca 1.4).
 - Add `auto unpause` (deprecated alias: `auto resume`) so the pause switch has a non-confusing name.
 - Record the pre-expiry state of an expired run so adoption continues from it.
 - Worker task specs can carry a resume preface (existing commits, uncommitted paths, PR, attempted findings).

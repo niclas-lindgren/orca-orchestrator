@@ -104,10 +104,10 @@ Use this when an issue already has a lease row, worktree, branch, worker or PR: 
    `adopt` keeps the run's position, attempts, head and native binding, and fences the old identity. A live lease is refused: wait for expiry or have the holder run `GUARD auto handover --issue ISSUE --owner OLD_OWNER --run OLD_RUN`. With no run row yet, use `claim`.
    Founder approvals given to the old session are **not** inherited; ask again.
 3. Follow the recommendation:
-   - `ATTACH_LIVE_WORKER`: do not start another worker. Use `worker-show` and `send --to dispatch:ID` to brief the worker on the new coordinator.
+   - `ATTACH_LIVE_WORKER`: do not start another worker. Bind to the old native Run with `"$ORCA" orchestration run-use --id NATIVE_RUN` so its mail reaches you (verified: a `worker_done` from a dead coordinator's worker is readable by a newly bound coordinator), then `worker-show` and `send --to dispatch:ID` to brief the worker. `send` to a finished worker reopens it as a follow-up Task.
    - `RESTART_WORKER_ON_SAME_TASK`: unbind the exact dead dispatch, bind `pending:REQ`, then `worker-start --task TASK --retry-of DISPATCH --worktree id:WORKTREE --retry-request REQ`, as in `orca-fleet`.
    - `LAUNCH_WORKER_IN_EXISTING_WORKTREE`: `worker-start --spec ... --worktree id:WORKTREE --agent AGENT`, with the `specPreface` lines from the report so the worker continues the existing commits and uncommitted work instead of restarting. Do not use `new-child`.
-   - `RECREATE_WORKTREE_FOR_BRANCH`: the branch has no registered worktree. Inspect the `worktree create` receipt; stop if it is ambiguous.
+   - `RECREATE_WORKTREE_FOR_BRANCH`: the branch has no registered worktree. Pass `--branch BRANCH --base-branch BRANCH`: verified on Orca 1.4, `--branch` alone creates a **new** branch from the default base (often suffixed `-2`) and leaves the existing commits behind. Confirm `result.worktree.branch` and its head before working; stop on a suffixed name.
    - `CLEANUP`: a PR is merged; go to cleanup.
 4. Before leaving, hand a live run to the next coordinator with `GUARD auto handover`, not by letting the lease lapse.
 

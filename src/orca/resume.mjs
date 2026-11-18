@@ -104,7 +104,7 @@ export function resumeReport({ repoRoot, issue, db, stateDir, exec = defaultExec
     openFindings,
   };
 
-  const recommendation = recommend({ run, leaseLive, binding, bound, worktree, branchExists, prs, workers, errors, paused: isPaused(stateDir) });
+  const recommendation = recommend({ run, leaseLive, binding, bound, worktree, branch, branchExists, prs, workers, errors, paused: isPaused(stateDir) });
   return {
     ok: true,
     issue,
@@ -130,7 +130,7 @@ export function resumeReport({ repoRoot, issue, db, stateDir, exec = defaultExec
 const NATIVE = "ORCA orchestration";
 
 // The first matching rule wins; every uncertainty stops before any worker starts.
-function recommend({ run, leaseLive, binding, bound, worktree, branchExists, prs, workers, errors, paused }) {
+function recommend({ run, leaseLive, binding, bound, worktree, branch, branchExists, prs, workers, errors, paused }) {
   const none = () => [];
   const merged = prs.some((p) => String(p.state).toUpperCase() === "MERGED");
   if (errors.length) return { code: "UNRELIABLE", reason: "a source could not be read; resolve it and run the report again before acting", next: none };
@@ -142,7 +142,7 @@ function recommend({ run, leaseLive, binding, bound, worktree, branchExists, prs
   const live = workers.filter((w) => w.class === "live");
   const unverifiable = workers.filter((w) => w.class === "unverifiable");
   if (live.length) {
-    return { code: "ATTACH_LIVE_WORKER", reason: "a worker is still running in this worktree; do not start another", next: () => [...adopt, `${NATIVE} worker-show --dispatch ${live[0].dispatchId} --json`, `${NATIVE} send --to dispatch:${live[0].dispatchId} --subject resume --body "<new coordinator, current state>"`] };
+    return { code: "ATTACH_LIVE_WORKER", reason: "a worker is still running in this worktree; do not start another", next: () => [...adopt, `${NATIVE} run-use --id ${binding?.runId ?? "<native_run>"} --json  # bind to the old Run; its mail then reaches this coordinator`, `${NATIVE} worker-show --dispatch ${live[0].dispatchId} --json`, `${NATIVE} send --to dispatch:${live[0].dispatchId} --subject resume --body "<new coordinator, current state>"`] };
   }
   if (unverifiable.length) {
     return { code: "WORKER_UNVERIFIABLE", reason: "Orca cannot prove the worker exited; do not start, stop or abandon on silence", next: () => unverifiable.map((w) => `${NATIVE} worker-show --dispatch ${w.dispatchId} --json`) };
@@ -165,6 +165,16 @@ function recommend({ run, leaseLive, binding, bound, worktree, branchExists, prs
       next: () => [...adopt, `${NATIVE} worker-start --spec "<buildTaskSpec + specPreface>" --worktree ${sel} --agent <agent>`],
     };
   }
-  if (branchExists) return { code: "RECREATE_WORKTREE_FOR_BRANCH", reason: "the branch exists but no worktree is registered for it; native behaviour of `worktree create` on an existing branch is unverified, inspect the receipt", next: () => [...adopt, `ORCA worktree create --branch <branch> --issue <n> --parent-worktree current --json`] };
+  if (branchExists) {
+    return {
+      code: "RECREATE_WORKTREE_FOR_BRANCH",
+      reason: "the branch exists but no worktree is registered for it; `--branch` alone makes a NEW branch from the default base and leaves this branch's commits behind (verified on Orca 1.4), so pass --base-branch with the same name and check the receipt's branch and head",
+      next: () => [
+        ...adopt,
+        `ORCA worktree create --name issue-<n> --branch ${branch} --base-branch ${branch} --issue <n> --parent-worktree current --setup inherit --json`,
+        `# then confirm result.worktree.branch is refs/heads/${branch} and its head is the branch's last commit; stop if the name is suffixed such as ${branch}-2`,
+      ],
+    };
+  }
   return { code: "START_FRESH", reason: "no worktree, branch, worker or PR for this issue", next: () => adopt };
 }

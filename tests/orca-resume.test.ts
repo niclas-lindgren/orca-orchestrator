@@ -165,6 +165,19 @@ describe("resume report", () => {
     rmSync(path, { recursive: true, force: true });
   });
 
+  it("recreates a worktree for an existing branch with --base-branch, keeping its commits", () => {
+    // A branch with a commit but no registered worktree: exactly the state that
+    // makes `--branch` alone silently start from the default base.
+    const db = openState(":memory:");
+    const branch = git(root, "rev-parse", "--abbrev-ref", "HEAD");
+    git(root, "branch", "agent/issue-7");
+    const r = report(db, world());
+    expect(r).toMatchObject({ recommendation: "RECREATE_WORKTREE_FOR_BRANCH", worktree: null, branchExists: true });
+    expect(r.next.join("\n")).toContain("--base-branch agent/issue-7");
+    expect(r.reason).toMatch(/new branch from the default base/i);
+    expect(branch).toBe("main");
+  });
+
   it("refuses to recommend when a source is unreadable, and stops on a merged PR", () => {
     const db = openState(":memory:");
     expect(report(db, world({ ghDown: true }))).toMatchObject({ recommendation: "UNRELIABLE" });
