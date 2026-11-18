@@ -106,7 +106,7 @@ async function handle(message) {
     result(id, {
       protocolVersion: params.protocolVersion ?? "2025-03-26",
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "orca-orchestrator", version: "0.3.0" },
+      serverInfo: { name: "orca-orchestrator", version: "0.4.0" },
     });
     return;
   }

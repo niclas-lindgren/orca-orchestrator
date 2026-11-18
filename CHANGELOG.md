@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-11-18
 
 - Add `orca resume-report --issue N`: a read-only join of lease store, Git, GitHub and native Orca that names the resume scenario and the commands for it.
 - Add `auto handover` and `auto adopt`: fenced, audited transfer of an issue's run (including a native worker binding) to a new coordinator; keeps position, attempts and repair counters, does not inherit founder approvals.
