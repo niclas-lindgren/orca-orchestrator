@@ -19,6 +19,25 @@ The `learn` commands reuse the configured `stateDir` and repository slug (the re
 segregated by repository even if a state directory is shared; no learning settings grant
 permission to bypass protected-domain checks. See [learning.md](learning.md).
 
+## Dispatcher (`stateDir/dispatcher.json`)
+
+The single-shot dispatcher is disabled unless its own file enables it. Every key is optional.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Nothing is dispatched while false. A present but unreadable file also stays disabled. |
+| `maxWorkers` | `1` | Capacity in the current run of the tick. Ambiguous records and unexpired orphan claims occupy a slot. |
+| `dailyStartBudget` | `3` | Attempts, not successes, counted per day in the configured window. |
+| `window` | `08–20 Europe/Oslo` | When dispatch may happen. |
+| `readyLabel` / `excludeLabels` | `status:ready` / `["status:blocked"]` | Which issues are eligible. |
+| `owner` | `dispatcher` | The fenced identity the dispatcher claims and adopts runs under. |
+| `agent` | `claude` | Native Orca agent id for the worker. |
+| `leaseTtlMin` | `60` | Lease renewed for every live worker on each tick. |
+| `autoResume` | `false` | **Starts an agent without a person present.** When true, a dead worker whose issue has no pull request is resumed: the run is adopted under the dispatcher identity and native Orca retries the same Task in the existing worktree. |
+| `autoResumeMaxRetries` | `2` | Resume attempts recorded on the dispatch record. A restart does not reset them. |
+
+`autoResume` only acts when Orca proves the worker exited (`liveness: exited`). An `unverifiable` worker, an ambiguous record, an unreadable source or an adoption refusal is reported in `dispatcher/status.json` and never started.
+
 ## Protected domains
 
 ```json

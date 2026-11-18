@@ -29,7 +29,7 @@ export function buildTaskSpec({ issue, title, branch, worktree, gate = requireSe
   ].join("\n");
 }
 
-export function buildDispatchPlan({ issue, title, owner, runId, repoRoot, stateDir, agent = "claude", orca = "orca", worktree: knownWorktree, resume = null }) {
+export function buildDispatchPlan({ issue, title, owner, runId, repoRoot, stateDir, agent = "claude", orca = "orca", worktree: knownWorktree, resume = null, retryOf = null }) {
   const worktree = knownWorktree ?? worktreePathFor(repoRoot, issue);
   const branch = branchFor(issue);
   const spec = buildTaskSpec({ issue, title, branch, worktree, resume });
@@ -50,7 +50,12 @@ export function buildDispatchPlan({ issue, title, owner, runId, repoRoot, stateD
       status: [orca, "status", "--json"],
       worktreeShow: [orca, "worktree", "show", "--worktree", `path:${worktree}`, "--json"],
       runCreate: [orca, "orchestration", "run-create", "--objective", `Deliver issue #${issue}: ${title}`, "--json"],
-      workerStart: [orca, "orchestration", "worker-start", "--spec", spec, "--worktree", `path:${worktree}`, "--agent", agent, "--json"],
+      // A retry reuses the dead dispatch's Task; a fresh dispatch lets Orca create one.
+      workerStart: [
+        orca, "orchestration", "worker-start",
+        ...(retryOf ? ["--task", retryOf.taskId, "--retry-of", retryOf.dispatchId] : ["--spec", spec]),
+        "--worktree", `path:${worktree}`, "--agent", agent, "--json",
+      ],
     },
   };
 }
@@ -111,20 +116,29 @@ function readRecord(file) {
   }
 }
 
+// The record keeps every earlier field (a resume adds resumeRetries and the
+// dispatch it replaced), so a later state change never loses evidence.
 function writeRecord(plan, state, detail = {}) {
-  writeFileSync(plan.recordFile, `${JSON.stringify({ issue: plan.issue, runId: plan.runId, owner: plan.owner, state, ...detail })}\n`);
+  writeFileSync(plan.recordFile, `${JSON.stringify({ ...readRecord(plan.recordFile), issue: plan.issue, runId: plan.runId, owner: plan.owner, state, ...detail })}\n`);
 }
 
 // Writes the record exclusively: a second dispatch for the same issue finds it
 // and stops. Later state changes overwrite it through writeRecord.
-function claimRecord(plan) {
+function claimRecord(plan, { resumeFromRunId = null } = {}) {
   mkdirSync(join(plan.recordFile, ".."), { recursive: true });
   try {
     writeFileSync(plan.recordFile, `${JSON.stringify({ issue: plan.issue, runId: plan.runId, owner: plan.owner, state: "starting" })}\n`, { flag: "wx" });
-    return { ok: true };
+    return { ok: true, resumed: false };
   } catch (error) {
     if (error?.code !== "EEXIST") throw error;
-    return { ok: false, code: "DISPATCH_RECORD_EXISTS", recordFile: plan.recordFile, existing: readRecord(plan.recordFile) };
+    const existing = readRecord(plan.recordFile);
+    // A resume takes over the record only when it names the run that owned it;
+    // any other existing record is the fail-closed guard and still refuses.
+    if (resumeFromRunId === null || existing?.runId !== resumeFromRunId || existing?.state !== "started") {
+      return { ok: false, code: "DISPATCH_RECORD_EXISTS", recordFile: plan.recordFile, existing };
+    }
+    writeRecord(plan, "starting", { resumeRetries: existing.resumeRetries ?? 0, resumedFrom: { runId: existing.runId, dispatchId: existing.dispatchReceipt?.dispatchId ?? null } });
+    return { ok: true, resumed: true, existing };
   }
 }
 
@@ -159,7 +173,7 @@ function commandWithWorktreeSelector(command, selector) {
  */
 export function dispatch(
   plan,
-  { exec = defaultExec, cwd = plan.worktree, readLeaseRuns, now = Date.now, sleep = defaultSleep, worktreeResolveAttempts = 30 },
+  { exec = defaultExec, cwd = plan.worktree, readLeaseRuns, now = Date.now, sleep = defaultSleep, worktreeResolveAttempts = 30, resumeFromRunId = null },
 ) {
   const steps = [];
   const call = (name, [command, ...args], dir) => {
@@ -201,7 +215,7 @@ export function dispatch(
   if (!worktreeSelector) return { ok: false, code: "WORKTREE_UNRESOLVED", worktree: plan.worktree, steps };
   if (!heldNow()) return { ok: false, code: "LEASE_LOST_DURING_WORKTREE_RESOLUTION", worktree: plan.worktree, steps };
 
-  const claim = claimRecord(plan);
+  const claim = claimRecord(plan, { resumeFromRunId });
   if (!claim.ok) return { ok: false, code: claim.code, recordFile: claim.recordFile, existing: claim.existing, steps };
 
   const runCreate = call("runCreate", plan.commands.runCreate, cwd);

@@ -120,7 +120,8 @@ export function runCommand(argv, { repoRoot, stateDir = defaultStateDir(repoRoot
   if (parsed.error) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: parsed.error } };
   const { flags } = parsed;
   const paused = isPaused(stateDir);
-  if (command === "pause" || command === "resume") {
+  if (command === "unpause" && !paused) return { code: 0, result: { ok: true, paused: false } };
+  if (command === "pause" || command === "resume" || command === "unpause") {
     // Operator stop switch: while paused, claim and auth-check refuse to start work.
     mkdirSync(stateDir, { recursive: true });
     if (command === "pause") writeFileSync(join(stateDir, "PAUSED"), `${new Date(now).toISOString()}\n`);

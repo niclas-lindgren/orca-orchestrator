@@ -19,7 +19,7 @@ const GuardParams = Type.Object({
 
 const ALLOWED = {
   auto: new Set([
-    "status", "claim", "renew", "release", "recover", "pause", "resume",
+    "status", "claim", "renew", "release", "recover", "pause", "resume", "unpause",
     "auth-check", "founder-resume", "repair-record", "repair-status",
     "bind-native", "unbind-native", "handover", "adopt", "review-record", "review-forget",
   ]),

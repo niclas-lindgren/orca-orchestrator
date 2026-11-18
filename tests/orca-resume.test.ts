@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -239,6 +239,22 @@ describe("review chat bookkeeping", () => {
     expect(cmd([...base, "--url", "javascript:alert(1)"]).code).toBe(2);
     expect(cmd([...base, "--url", url, "--head", "abc"]).code).toBe(2);
     expect(cmd([...base, "--url", url, "--head", "a".repeat(40)]).result).toMatchObject({ ok: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("pause switch naming", () => {
+  it("unpause clears the pause file, pause sets it, resume remains an alias", () => {
+    const root = mkdtempSync(join(tmpdir(), "orca-pause-"));
+    const cmd = (c: string) => runCommand([c], { repoRoot: root, stateDir: join(root, "auto"), now: T0 });
+    expect(cmd("pause").result).toMatchObject({ ok: true, paused: true });
+    expect(existsSync(join(root, "auto", "PAUSED"))).toBe(true);
+    expect(cmd("unpause").result).toMatchObject({ ok: true, paused: false });
+    expect(existsSync(join(root, "auto", "PAUSED"))).toBe(false);
+    // Idempotent when nothing is paused, and the old name still works.
+    expect(cmd("unpause").result).toMatchObject({ ok: true, paused: false });
+    cmd("pause");
+    expect(cmd("resume").result).toMatchObject({ ok: true, paused: false });
     rmSync(root, { recursive: true, force: true });
   });
 });

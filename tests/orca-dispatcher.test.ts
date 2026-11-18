@@ -25,7 +25,9 @@ function world(opts: { issues?: Issue[]; closed?: number[]; prs?: number[]; verd
     ghDown: false,
     orcaListDown: false,
     startOutcome: "ready" as "ready" | "fail",
+    adoptRefused: false,
     calls: [] as string[],
+    workerStarts: [] as Array<{ args: string[]; retryOf: string | null; task: string | null }>,
   };
   const out = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value), stderr: "" });
   const exec = (command: string, args: string[]) => {
@@ -48,6 +50,17 @@ function world(opts: { issues?: Issue[]; closed?: number[]; prs?: number[]; verd
         return out({ ok: true });
       }
       if (sub === "renew") return out({ ok: true });
+      if (sub === "adopt") {
+        const issue = Number(flag("issue"));
+        const run = state.leases.find((l) => l.issue === issue);
+        if (!run) return out({ ok: false, code: "NO_RUN" }, 1);
+        if (state.adoptRefused) return { status: 1, stdout: "", stderr: "LEASE_LIVE" };
+        run.owner = flag("owner");
+        run.run_id = flag("run");
+        run.lease_expires_at = NOW + 3_600_000;
+        return out({ ok: true, run });
+      }
+      if (sub === "handover") return out({ ok: true });
       if (sub === "auth-check") {
         if (state.verdict === "REQUIRES_FOUNDER") state.leases = state.leases.filter((l) => l.issue !== Number(flag("issue")));
         return out({ ok: true, result: state.verdict });
@@ -65,14 +78,18 @@ function world(opts: { issues?: Issue[]; closed?: number[]; prs?: number[]; verd
       if (args[1] === "worker-start") {
         if (state.startOutcome === "fail") return out({ ok: false }, 1);
         const worktreeId = args[args.indexOf("--worktree") + 1].slice("id:".length);
-        state.workers.push({ workerState: "active", resource: { worktreeId } });
-        return out({ ok: true, result: { state: "ready" } });
+        state.workerStarts.push({ args, retryOf: flag("retry-of") ?? null, task: flag("task") ?? null });
+        state.workers.push({ dispatchId: `ctx_${state.workerStarts.length}`, taskId: "task_new", state: "ready", liveness: "live", workspace: worktreeId });
+        return out({ ok: true, result: { state: "ready", dispatchId: `ctx_${state.workerStarts.length}`, taskId: "task_new" } });
       }
     }
     if (command === "gh") {
       if (state.ghDown) return { status: 1, stdout: "", stderr: "network" };
       if (args[0] === "issue" && args[1] === "list") return out(state.issues.map((i) => ({ ...i, labels: i.labels.map((name) => ({ name })) })));
-      if (args[0] === "issue" && args[1] === "view") return out({ state: state.closed.has(Number(args[2])) ? "CLOSED" : "OPEN" });
+      if (args[0] === "issue" && args[1] === "view") {
+        if (args.includes("--jq")) return { status: 0, stdout: `Issue ${args[2]}`, stderr: "" };
+        return out({ state: state.closed.has(Number(args[2])) ? "CLOSED" : "OPEN" });
+      }
       if (args[0] === "pr") return out(state.prs.has(Number(args[3].replace("agent/issue-", ""))) ? [{ number: 1 }] : []);
     }
     return { status: 1, stdout: "", stderr: `unscripted ${command} ${args.join(" ")}` };
@@ -83,9 +100,9 @@ function world(opts: { issues?: Issue[]; closed?: number[]; prs?: number[]; verd
 let stateDir: string;
 const enable = (extra: Record<string, unknown> = {}) => writeFileSync(join(stateDir, "dispatcher.json"), JSON.stringify({ enabled: true, ...extra }));
 const ready = (number: number, labels: string[] = ["status:ready"], body = ""): Issue => ({ number, title: `Issue ${number}`, labels, body });
-const run = (w: ReturnType<typeof world>, at = NOW) => {
+const run = async (w: ReturnType<typeof world>, at = NOW) => {
   let n = 0;
-  return tick({ repoRoot, stateDir, exec: w.exec, now: () => at, newRunId: () => `run-${++n}` });
+  return await tick({ repoRoot, stateDir, exec: w.exec, now: () => at, newRunId: () => `run-${++n}` });
 };
 
 beforeEach(() => {
@@ -94,40 +111,40 @@ beforeEach(() => {
 afterEach(() => rmSync(stateDir, { recursive: true, force: true }));
 
 describe("dispatcher tick", () => {
-  it("reads Orca's real worker-list shape: workspace path, state and liveness", () => {
+  it("reads Orca's real worker-list shape: workspace path, state and liveness", async () => {
     enable();
     const w = world({ issues: [ready(5)] });
-    run(w);
+    await run(w);
     const path = "/repo/.worktrees/issue-5";
     const real = (liveness: string, state = "ready") => [{ dispatchId: "ctx_1", state, liveness, workspace: `repo::${path}` }];
     w.state.workers = real("live");
-    expect(run(w)).toMatchObject({ outcome: "AT_CAPACITY", active: [{ issue: 5 }] });
+    expect(await run(w)).toMatchObject({ outcome: "AT_CAPACITY", active: [{ issue: 5 }] });
     w.state.workers = real("exited", "failed");
-    expect(run(w).review).toEqual([{ issue: 5, owner: "dispatcher", runId: "run-1" }]);
+    expect((await run(w)).review).toEqual([{ issue: 5, owner: "dispatcher", runId: "run-1" }]);
     // Orca cannot prove the exit: never finished, always ambiguous.
     w.state.workers = real("unverifiable", "failed");
-    const unverifiable = run(w);
+    const unverifiable = await run(w);
     expect(unverifiable.review).toEqual([]);
     expect(unverifiable.recoverableFailures).toEqual([{ issue: 5, state: "started-unverifiable" }]);
   });
 
-  it("is disabled by default and touches nothing", () => {
+  it("is disabled by default and touches nothing", async () => {
     const w = world({ issues: [ready(5)] });
-    expect(run(w).outcome).toBe("DISABLED");
+    expect((await run(w)).outcome).toBe("DISABLED");
     expect(w.state.calls).toEqual([]);
   });
 
-  it("stays disabled when the config is not valid JSON", () => {
+  it("stays disabled when the config is not valid JSON", async () => {
     writeFileSync(join(stateDir, "dispatcher.json"), "{ enabled: true");
     const w = world({ issues: [ready(5)] });
-    expect(run(w).outcome).toBe("CONFIG_INVALID");
+    expect((await run(w)).outcome).toBe("CONFIG_INVALID");
     expect(w.state.calls).toEqual([]);
   });
 
-  it("dispatches one ready issue and records the start", () => {
+  it("dispatches one ready issue and records the start", async () => {
     enable();
     const w = world({ issues: [ready(5)] });
-    const report = run(w);
+    const report = await run(w);
     expect(report.outcome).toBe("DISPATCHED");
     expect(report.dispatched).toEqual([{ issue: 5, runId: "run-1" }]);
     expect(JSON.parse(readFileSync(join(stateDir, "orca-dispatch", "issue-5.json"), "utf8")).state).toBe("started");
@@ -135,173 +152,258 @@ describe("dispatcher tick", () => {
     expect(existsSync(join(stateDir, "dispatcher", "status.json"))).toBe(true);
   });
 
-  it("does not dispatch the same issue on a duplicate wake or after a restart", () => {
+  it("does not dispatch the same issue on a duplicate wake or after a restart", async () => {
     enable({ maxWorkers: 2 });
     const w = world({ issues: [ready(5)] });
-    expect(run(w).outcome).toBe("DISPATCHED");
-    expect(run(w).outcome).toBe("IDLE");
-    expect(run(w).outcome).toBe("IDLE");
+    expect((await run(w)).outcome).toBe("DISPATCHED");
+    expect((await run(w)).outcome).toBe("IDLE");
+    expect((await run(w)).outcome).toBe("IDLE");
     expect(w.state.workers).toHaveLength(1);
   });
 
-  it("holds at capacity while a dispatched worker is live and renews its lease", () => {
+  it("holds at capacity while a dispatched worker is live and renews its lease", async () => {
     enable();
     const w = world({ issues: [ready(5), ready(6)] });
-    run(w);
-    const second = run(w);
+    await run(w);
+    const second = await run(w);
     expect(second.outcome).toBe("AT_CAPACITY");
     expect(second.active).toHaveLength(1);
     expect(w.state.calls).toContain("auto renew");
     expect(w.state.workers).toHaveLength(1);
   });
 
-  it("frees capacity once the worker has finished and reports the issue for review", () => {
+  it("frees capacity once the worker has finished and reports the issue for review", async () => {
     enable();
     const w = world({ issues: [ready(5), ready(6)] });
-    run(w);
+    await run(w);
     w.state.workers = [{ workerState: "stopped", resource: { worktreeId: "ep::/repo/.worktrees/issue-5" } }];
-    const report = run(w);
+    const report = await run(w);
     expect(report.review.map((r: { issue: number }) => r.issue)).toEqual([5]);
     expect(report.dispatched.map((d: { issue: number }) => d.issue)).toEqual([6]);
   });
 
-  it("refuses to run while another tick holds the lock, keeps an old lock whose process is alive, and takes over a dead one", () => {
+  describe("auto-resume of dead workers", () => {
+    // An issue the dispatcher started, whose worker provably exited and whose
+    // lease lapsed: exactly the state a lost coordinator leaves behind.
+    const seed = (w: ReturnType<typeof world>, { retries = 0, liveness = "exited", receipt = { dispatchId: "ctx_dead", taskId: "task_5" } } = {}) => {
+      w.state.leases.push({ issue: 5, owner: "dispatcher", run_id: "run-1", state: "IMPLEMENTING", lease_expires_at: NOW - 1 });
+      w.state.workers = [{ dispatchId: "ctx_dead", taskId: "task_5", state: "failed", liveness, workspace: "ep::/repo/.worktrees/issue-5" }];
+      const dir = join(stateDir, "orca-dispatch");
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, "issue-5.json");
+      writeFileSync(file, JSON.stringify({ issue: 5, runId: "run-1", owner: "dispatcher", state: "started", dispatchReceipt: receipt, resumeRetries: retries }));
+      return file;
+    };
+
+    it("does nothing unless the operator opted in", async () => {
+      enable();
+      const w = world({ issues: [] });
+      seed(w);
+      const report = await run(w);
+      expect(report.review.map((r: { issue: number }) => r.issue)).toEqual([5]);
+      expect(w.state.calls).not.toContain("auto adopt");
+      expect(w.state.workerStarts).toHaveLength(0);
+    });
+
+    it("adopts the run and retries the same Task in the existing worktree", async () => {
+      enable({ maxWorkers: 2, autoResume: true });
+      const w = world({ issues: [] });
+      const file = seed(w);
+      const report = await run(w);
+      expect(report.outcome).toBe("AUTO_RESUMED");
+      expect(report.dispatched).toEqual([{ issue: 5, runId: expect.any(String), resumedFrom: "run-1", retryOf: "ctx_dead" }]);
+      // The retry names the dead dispatch and its Task instead of a new spec.
+      expect(w.state.workerStarts.at(-1)).toMatchObject({ retryOf: "ctx_dead", task: "task_5" });
+      expect(w.state.workerStarts.at(-1)!.args).not.toContain("--spec");
+      expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ issue: 5, runId: report.dispatched[0].runId, state: "started", resumeRetries: 1 });
+      expect(w.state.leases[0]).toMatchObject({ owner: "dispatcher", lease_expires_at: NOW + 3_600_000 });
+    });
+
+    it("stops at the retry bound", async () => {
+      enable({ maxWorkers: 2, autoResume: true, autoResumeMaxRetries: 1 });
+      const w = world({ issues: [] });
+      seed(w, { retries: 1 });
+      const report = await run(w);
+      expect(report.outcome).toBe("IDLE");
+      expect(report.skipped).toContainEqual({ issue: 5, reason: "auto-resume retries exhausted (1)" });
+      expect(w.state.calls).not.toContain("auto adopt");
+    });
+
+    it("does not resume an issue that already has a pull request", async () => {
+      enable({ maxWorkers: 2, autoResume: true });
+      const w = world({ issues: [], prs: [5] });
+      seed(w);
+      const report = await run(w);
+      expect(report.skipped).toContainEqual({ issue: 5, reason: "delivery PR exists" });
+      expect(w.state.workerStarts).toHaveLength(0);
+    });
+
+    it("reports a refused adoption without starting a worker", async () => {
+      enable({ maxWorkers: 2, autoResume: true });
+      const w = world({ issues: [] });
+      seed(w);
+      w.state.adoptRefused = true;
+      const report = await run(w);
+      expect(report.skipped).toContainEqual({ issue: 5, reason: "adopt refused: LEASE_LIVE" });
+      expect(w.state.workerStarts).toHaveLength(0);
+    });
+
+    it("needs a dispatch receipt to know which Task to retry", async () => {
+      enable({ maxWorkers: 2, autoResume: true });
+      const w = world({ issues: [] });
+      seed(w, { receipt: {} });
+      const report = await run(w);
+      expect(report.skipped).toContainEqual({ issue: 5, reason: "dispatch receipt has no Task to retry" });
+      expect(w.state.calls).not.toContain("auto adopt");
+    });
+
+    it("leaves an unverifiable worker alone", async () => {
+      enable({ maxWorkers: 2, autoResume: true });
+      const w = world({ issues: [] });
+      seed(w, { liveness: "unverifiable" });
+      const report = await run(w);
+      expect(report.outcome).toBe("IDLE");
+      expect(w.state.calls).not.toContain("auto adopt");
+    });
+  });
+
+  it("refuses to run while another tick holds the lock, keeps an old lock whose process is alive, and takes over a dead one", async () => {
     enable();
     mkdirSync(join(stateDir, "dispatcher"), { recursive: true });
     const lock = join(stateDir, "dispatcher", "tick.lock");
     writeFileSync(lock, JSON.stringify({ token: "other", pid: 1, at: NOW - 1000 }));
     const w = world({ issues: [ready(5)] });
-    expect(run(w).outcome).toBe("TICK_LOCKED");
+    expect((await run(w)).outcome).toBe("TICK_LOCKED");
     expect(w.state.calls).toEqual([]);
     const DEAD_PID = 2_147_483_646;
     writeFileSync(lock, JSON.stringify({ token: "old", pid: process.pid, at: NOW - 3_600_000 }));
-    expect(run(w).outcome).toBe("TICK_LOCKED");
+    expect((await run(w)).outcome).toBe("TICK_LOCKED");
     writeFileSync(lock, JSON.stringify({ token: "old", pid: DEAD_PID, at: NOW - 3_600_000 }));
-    expect(run(w).outcome).toBe("DISPATCHED");
+    expect((await run(w)).outcome).toBe("DISPATCHED");
     expect(existsSync(lock)).toBe(false);
   });
 
-  it("does not dispatch while paused but still reconciles", () => {
+  it("does not dispatch while paused but still reconciles", async () => {
     enable();
     writeFileSync(join(stateDir, "PAUSED"), "");
     const w = world({ issues: [ready(5)] });
-    expect(run(w).outcome).toBe("PAUSED");
+    expect((await run(w)).outcome).toBe("PAUSED");
     expect(w.state.workers).toHaveLength(0);
     expect(w.state.calls).toContain("orca orchestration worker-list");
   });
 
-  it("does not dispatch outside the operating window", () => {
+  it("does not dispatch outside the operating window", async () => {
     enable();
     const w = world({ issues: [ready(5)] });
-    expect(run(w, Date.UTC(2026, 10, 2, 2, 0, 0)).outcome).toBe("OUTSIDE_WINDOW");
+    expect((await run(w, Date.UTC(2026, 10, 2, 2, 0, 0))).outcome).toBe("OUTSIDE_WINDOW");
     expect(w.state.workers).toHaveLength(0);
   });
 
-  it("counts attempts, not successes, against the daily budget", () => {
+  it("counts attempts, not successes, against the daily budget", async () => {
     enable({ dailyStartBudget: 1, maxWorkers: 2 });
     const w = world({ issues: [ready(5), ready(6)] });
     w.state.startOutcome = "fail";
-    expect(run(w).errors[0]).toContain("record kept");
+    expect((await run(w)).errors[0]).toContain("record kept");
     // The failed start spent the day's only attempt.
     w.state.startOutcome = "ready";
     rmSync(join(stateDir, "orca-dispatch"), { recursive: true });
     w.state.leases = [];
-    expect(run(w).outcome).toBe("BUDGET_EXHAUSTED");
+    expect((await run(w)).outcome).toBe("BUDGET_EXHAUSTED");
     expect(w.state.workers).toHaveLength(0);
   });
 
-  it("treats a corrupted ledger as a spent budget", () => {
+  it("treats a corrupted ledger as a spent budget", async () => {
     enable();
     mkdirSync(join(stateDir, "dispatcher"), { recursive: true });
     writeFileSync(join(stateDir, "dispatcher", "ledger.json"), "garbage");
     const w = world({ issues: [ready(5)] });
-    expect(run(w).outcome).toBe("BUDGET_EXHAUSTED");
+    expect((await run(w)).outcome).toBe("BUDGET_EXHAUSTED");
   });
 
-  it("starts nothing when GitHub cannot be read", () => {
+  it("starts nothing when GitHub cannot be read", async () => {
     enable();
     const w = world({ issues: [ready(5)] });
     w.state.ghDown = true;
-    expect(run(w).outcome).toBe("GITHUB_UNAVAILABLE");
+    expect((await run(w)).outcome).toBe("GITHUB_UNAVAILABLE");
     expect(w.state.leases).toEqual([]);
   });
 
-  it("starts nothing when Orca workers cannot be listed", () => {
+  it("starts nothing when Orca workers cannot be listed", async () => {
     enable();
     const w = world({ issues: [ready(5)] });
     w.state.orcaListDown = true;
-    expect(run(w).outcome).toBe("RECONCILE_UNRELIABLE");
+    expect((await run(w)).outcome).toBe("RECONCILE_UNRELIABLE");
     expect(w.state.leases).toEqual([]);
   });
 
-  it("fails closed on an unconfirmed start and never retries it", () => {
+  it("fails closed on an unconfirmed start and never retries it", async () => {
     enable({ maxWorkers: 2 });
     const w = world({ issues: [ready(5), ready(6)] });
     w.state.startOutcome = "fail";
-    run(w);
+    await run(w);
     expect(JSON.parse(readFileSync(join(stateDir, "orca-dispatch", "issue-5.json"), "utf8")).state).toBe("unconfirmed");
     w.state.startOutcome = "ready";
-    const again = run(w);
+    const again = await run(w);
     expect(again.recoverableFailures).toEqual([{ issue: 5, state: "unconfirmed" }]);
     expect(again.dispatched.map((d: { issue: number }) => d.issue)).toEqual([6]);
     expect(w.state.workers).toHaveLength(1);
   });
 
-  it("treats an unreadable dispatch record as occupying capacity", () => {
+  it("treats an unreadable dispatch record as occupying capacity", async () => {
     enable();
     mkdirSync(join(stateDir, "orca-dispatch"), { recursive: true });
     writeFileSync(join(stateDir, "orca-dispatch", "issue-9.json"), "not json");
     const w = world({ issues: [ready(5)] });
-    expect(run(w).outcome).toBe("AT_CAPACITY");
+    expect((await run(w)).outcome).toBe("AT_CAPACITY");
   });
 
-  it("holds capacity for a fresh claim that never started, then frees an expired one", () => {
+  it("holds capacity for a fresh claim that never started, then frees an expired one", async () => {
     enable();
     const w = world({ issues: [ready(5)] });
     // Crash between claim and start: a dispatcher lease and no dispatch record.
     w.state.leases.push({ issue: 5, owner: "dispatcher", run_id: "dead", state: "IMPLEMENTING", lease_expires_at: NOW + 60_000 });
-    expect(run(w).outcome).toBe("AT_CAPACITY");
+    expect((await run(w)).outcome).toBe("AT_CAPACITY");
     w.state.leases[0].lease_expires_at = NOW - 1;
-    const report = run(w);
+    const report = await run(w);
     expect(report.dispatched.map((d: { issue: number }) => d.issue)).toEqual([5]);
     expect(w.state.workers).toHaveLength(1);
   });
 
-  it("treats a started record with an unidentifiable worker as occupying capacity", () => {
+  it("treats a started record with an unidentifiable worker as occupying capacity", async () => {
     enable();
     const w = world({ issues: [ready(6)] });
     mkdirSync(join(stateDir, "orca-dispatch"), { recursive: true });
     writeFileSync(join(stateDir, "orca-dispatch", "issue-5.json"), JSON.stringify({ issue: 5, owner: "dispatcher", runId: "r", state: "started" }));
     w.state.workers = [{ workerState: "active", resource: {} }, { workerState: "active" }];
-    const report = run(w);
+    const report = await run(w);
     expect(report.outcome).toBe("AT_CAPACITY");
     expect(report.recoverableFailures).toEqual([{ issue: 5, state: "started-worker-unidentified" }]);
   });
 
-  it("treats a worker Orca no longer lists as finished once the lease is terminal", () => {
+  it("treats a worker Orca no longer lists as finished once the lease is terminal", async () => {
     enable();
     const w = world({ issues: [ready(6)] });
     mkdirSync(join(stateDir, "orca-dispatch"), { recursive: true });
     writeFileSync(join(stateDir, "orca-dispatch", "issue-5.json"), JSON.stringify({ issue: 5, owner: "dispatcher", runId: "r", state: "started" }));
     w.state.leases.push({ issue: 5, owner: "dispatcher", run_id: "r", state: "COMPLETE", lease_expires_at: NOW - 1 });
-    const report = run(w);
+    const report = await run(w);
     expect(report.review.map((r: { issue: number }) => r.issue)).toEqual([5]);
     expect(report.dispatched.map((d: { issue: number }) => d.issue)).toEqual([6]);
   });
 
-  it("stops dispatching when a live worker's lease cannot be renewed", () => {
+  it("stops dispatching when a live worker's lease cannot be renewed", async () => {
     enable({ maxWorkers: 2 });
     const w = world({ issues: [ready(5)] });
-    run(w);
+    await run(w);
     w.state.issues.push(ready(6));
     const inner = w.exec as unknown as (c: string, a: string[]) => { status: number; stdout: string; stderr: string };
     const failing = ((c: string, a: string[]) => (c === "node" && a[2] === "renew" ? { status: 1, stdout: "", stderr: "boom" } : inner(c, a))) as never;
-    const report = tick({ repoRoot, stateDir, exec: failing, now: () => NOW, newRunId: () => "run-x" });
+    const report = await tick({ repoRoot, stateDir, exec: failing, now: () => NOW, newRunId: () => "run-x" });
     expect(report.outcome).toBe("RECONCILE_UNRELIABLE");
     expect(w.state.workers).toHaveLength(1);
   });
 
-  it("stops before claiming when another tick replaced its lock", () => {
+  it("stops before claiming when another tick replaced its lock", async () => {
     enable({ maxWorkers: 2 });
     const w = world({ issues: [ready(5)] });
     const inner = w.exec as unknown as (c: string, a: string[]) => { status: number; stdout: string; stderr: string };
@@ -311,30 +413,30 @@ describe("dispatcher tick", () => {
       }
       return inner(c, a);
     }) as never;
-    const report = tick({ repoRoot, stateDir, exec: stealing, now: () => NOW, newRunId: () => "run-x" });
+    const report = await tick({ repoRoot, stateDir, exec: stealing, now: () => NOW, newRunId: () => "run-x" });
     expect(report.dispatched).toEqual([]);
     expect(report.errors).toContain("tick lock was replaced; stopping");
     expect(w.state.leases).toEqual([]);
     expect(JSON.parse(readFileSync(join(stateDir, "dispatcher", "tick.lock"), "utf8")).token).toBe("thief");
   });
 
-  it("does not reclaim an unreadable lock that was just written", () => {
+  it("does not reclaim an unreadable lock that was just written", async () => {
     enable();
     mkdirSync(join(stateDir, "dispatcher"), { recursive: true });
     writeFileSync(join(stateDir, "dispatcher", "tick.lock"), "");
     // The file is fresh on disk (real mtime), so a mid-write lock is occupied.
     const w = world({ issues: [ready(5)] });
-    expect(tick({ repoRoot, stateDir, exec: w.exec, now: () => Date.now(), newRunId: () => "r" }).outcome).toBe("TICK_LOCKED");
+    expect((await tick({ repoRoot, stateDir, exec: w.exec, now: () => Date.now(), newRunId: () => "r" })).outcome).toBe("TICK_LOCKED");
   });
 
-  it("treats a ledger with an invalid attempt count as a spent budget", () => {
+  it("treats a ledger with an invalid attempt count as a spent budget", async () => {
     enable();
     mkdirSync(join(stateDir, "dispatcher"), { recursive: true });
     writeFileSync(join(stateDir, "dispatcher", "ledger.json"), JSON.stringify({ day: "2026-11-02", attempts: "many" }));
-    expect(run(world({ issues: [ready(5)] })).outcome).toBe("BUDGET_EXHAUSTED");
+    expect((await run(world({ issues: [ready(5)] }))).outcome).toBe("BUDGET_EXHAUSTED");
   });
 
-  it("skips issues that are blocked, claimed elsewhere, already delivered or excluded", () => {
+  it("skips issues that are blocked, claimed elsewhere, already delivered or excluded", async () => {
     enable({ maxWorkers: 5 });
     const w = world({
       issues: [ready(1, ["status:ready"], "Depends on #90"), ready(2), ready(3), ready(4, ["status:ready", "status:blocked"]), ready(7)],
@@ -342,27 +444,27 @@ describe("dispatcher tick", () => {
       prs: [3],
     });
     w.state.leases.push({ issue: 2, owner: "claude", run_id: "x", state: "IMPLEMENTING", lease_expires_at: NOW + 60_000 });
-    const report = run(w);
+    const report = await run(w);
     expect(report.dispatched.map((d: { issue: number }) => d.issue)).toEqual([7]);
     expect(report.skipped.map((s: { issue: number }) => s.issue).sort()).toEqual([1, 2, 3, 4]);
   });
 
-  it("dispatches an issue once its dependencies are closed", () => {
+  it("dispatches an issue once its dependencies are closed", async () => {
     enable();
     const w = world({ issues: [ready(1, ["status:ready"], "Blocked by #90, #91")], closed: [90, 91] });
-    expect(run(w).outcome).toBe("DISPATCHED");
+    expect((await run(w)).outcome).toBe("DISPATCHED");
   });
 
-  it("orders P0 before other priorities", () => {
+  it("orders P0 before other priorities", async () => {
     enable();
     const w = world({ issues: [ready(1, ["status:ready", "priority: P2"]), ready(9, ["status:ready", "priority: P0"])] });
-    expect(run(w).dispatched.map((d: { issue: number }) => d.issue)).toEqual([9]);
+    expect((await run(w)).dispatched.map((d: { issue: number }) => d.issue)).toEqual([9]);
   });
 
-  it("never infers founder approval and keeps unrelated work eligible", () => {
+  it("never infers founder approval and keeps unrelated work eligible", async () => {
     enable({ maxWorkers: 2 });
     const w = world({ issues: [ready(1), ready(2)], verdict: "REQUIRES_FOUNDER" });
-    const report = run(w);
+    const report = await run(w);
     expect(report.dispatched).toEqual([]);
     expect(report.skipped.map((s: { reason: string }) => s.reason)).toEqual(["awaiting founder (REQUIRES_FOUNDER)", "awaiting founder (REQUIRES_FOUNDER)"]);
     expect(w.state.workers).toHaveLength(0);
@@ -372,14 +474,14 @@ describe("dispatcher tick", () => {
 });
 
 describe("dispatcher helpers", () => {
-  it("reads blockers from dependency lines only", () => {
+  it("reads blockers from dependency lines only", async () => {
     expect(blockersOf("Intro #5\nDepends on #7 and #8\nSee #9")).toEqual([7, 8]);
   });
-  it("reads priority labels", () => {
+  it("reads priority labels", async () => {
     expect(priorityOf(["bug", "priority: P1"])).toBe(1);
     expect(priorityOf(["bug"])).toBe(9);
   });
-  it("evaluates the window in its own time zone", () => {
+  it("evaluates the window in its own time zone", async () => {
     const window = { startHour: 8, endHour: 20, timeZone: "Europe/Oslo" };
     expect(insideWindow(NOW, window)).toBe(true);
     expect(insideWindow(Date.UTC(2026, 10, 2, 22, 0, 0), window)).toBe(false);
@@ -387,19 +489,19 @@ describe("dispatcher helpers", () => {
 });
 
 describe("orca CLI commands", () => {
-  it("parses tick and status without flags", () => {
+  it("parses tick and status without flags", async () => {
     expect(parseArgs(["tick"])).toEqual({ command: "tick" });
     expect(parseArgs(["status"])).toEqual({ command: "status" });
     expect(parseArgs(["tick", "--issue", "5"]).error).toContain("no flags");
   });
 
-  it("status reports disabled, the pause state and the last report", () => {
+  it("status reports disabled, the pause state and the last report", async () => {
     const root = mkdtempSync(join(tmpdir(), "dispatcher-root-"));
     try {
-      const first = main(["status"], { repoRoot: root });
+      const first = await main(["status"], { repoRoot: root });
       expect(first.result).toMatchObject({ enabled: false, paused: false, last: null });
-      main(["tick"], { repoRoot: root });
-      const second = main(["status"], { repoRoot: root });
+      await main(["tick"], { repoRoot: root });
+      const second = await main(["status"], { repoRoot: root });
       expect(second.result).toMatchObject({ last: { outcome: "DISABLED" } });
     } finally {
       rmSync(root, { recursive: true, force: true });

@@ -29,6 +29,10 @@ export const DEFAULT_CONFIG = Object.freeze({
   owner: "dispatcher",
   agent: "claude",
   leaseTtlMin: 60,
+  // Off by default: resuming a dead worker starts an agent without a person
+  // present, so an operator must opt in explicitly.
+  autoResume: false,
+  autoResumeMaxRetries: 2,
 });
 
 const STALE_LOCK_MS = 10 * 60_000;
@@ -65,7 +69,17 @@ export function loadConfig(stateDir) {
   const read = readJson(configFile(stateDir));
   if (!read.ok) return { config: { ...DEFAULT_CONFIG }, problem: read.missing ? null : "dispatcher.json is not valid JSON" };
   const value = read.value ?? {};
-  return { config: { ...DEFAULT_CONFIG, ...value, window: { ...DEFAULT_CONFIG.window, ...(value.window ?? {}) } }, problem: null };
+  const retries = Number(value.autoResumeMaxRetries ?? DEFAULT_CONFIG.autoResumeMaxRetries);
+  return {
+    config: {
+      ...DEFAULT_CONFIG,
+      ...value,
+      window: { ...DEFAULT_CONFIG.window, ...(value.window ?? {}) },
+      autoResume: value.autoResume === true,
+      autoResumeMaxRetries: Number.isInteger(retries) && retries >= 0 ? retries : DEFAULT_CONFIG.autoResumeMaxRetries,
+    },
+    problem: null,
+  };
 }
 
 function zonedParts(ms, timeZone) {
@@ -319,6 +333,7 @@ function buildStatusView({ at, outcome, recon, dispatched, skipped, errors, conf
     at: new Date(at).toISOString(),
     outcome,
     enabled: config.enabled,
+    autoResume: config.autoResume,
     active: recon?.buckets.active ?? [],
     review: recon?.buckets.review ?? [],
     recoverableFailures: recon?.buckets.ambiguous ?? [],
@@ -426,10 +441,93 @@ export function tick({ repoRoot, stateDir, exec = defaultExec, now = Date.now, n
     }
     // Nothing is dispatched twice: the claim, the lease and the dispatch record each
     // refuse a second start before the worker is created.
-    return finish(dispatched.length ? "DISPATCHED" : "IDLE", { recon, dispatched, skipped, errors });
+    if (dispatched.length) return finish("DISPATCHED", { recon, dispatched, skipped, errors });
+
+    // A dead worker whose issue has no pull request is resumed only when the
+    // operator opted in. Every uncertainty (ambiguous record, unexpired lease,
+    // unreadable state) skips the issue instead of starting an agent.
+    if (config.autoResume) {
+      const resumed = autoResume({ repoRoot, stateDir, exec, at, config, recon, free });
+      errors.push(...resumed.errors);
+      skipped.push(...resumed.skipped);
+      if (resumed.dispatched.length) return finish("AUTO_RESUMED", { recon, dispatched: resumed.dispatched, skipped, errors });
+    }
+    return finish("IDLE", { recon, dispatched, skipped, errors });
   } finally {
     lock.release();
   }
+}
+
+/**
+ * Resumes dead workers for issues the dispatcher itself dispatched and that have
+ * no pull request yet. The run is adopted by the new fenced identity first (the
+ * expired lease alone cannot authorize a second worker), then Orca retries the
+ * same Task in the existing worktree. Retries are bounded and recorded on the
+ * dispatch record, so a restart does not reset them.
+ */
+function autoResume({ repoRoot, stateDir, exec, at, config, recon, free }) {
+  const auto = [...AUTO_COMMAND];
+  const dispatched = [];
+  const skipped = [];
+  const errors = [];
+  let capacity = free;
+  for (const entry of recon.buckets.review) {
+    if (capacity <= 0) break;
+    const issue = entry.issue;
+    if (entry.owner !== config.owner) continue;
+    const recordFile = join(stateDir, "orca-dispatch", `issue-${issue}.json`);
+    const read = readJson(recordFile);
+    const record = read.ok ? read.value : null;
+    const retries = Number(record?.resumeRetries ?? 0);
+    if (!Number.isInteger(retries) || retries >= config.autoResumeMaxRetries) {
+      skipped.push({ issue, reason: retries >= config.autoResumeMaxRetries ? `auto-resume retries exhausted (${retries})` : "dispatch record unreadable" });
+      continue;
+    }
+    const dispatchId = record?.dispatchReceipt?.dispatchId;
+    const taskId = record?.dispatchReceipt?.taskId;
+    if (typeof dispatchId !== "string" || typeof taskId !== "string") {
+      skipped.push({ issue, reason: "dispatch receipt has no Task to retry" });
+      continue;
+    }
+    // Delivered or in review means the dead worker is not a lost cause.
+    const prs = execJson(exec, "gh", ["pr", "list", "--head", `agent/issue-${issue}`, "--state", "all", "--json", "number"], repoRoot);
+    if (!prs.ok) {
+      skipped.push({ issue, reason: "delivery state unreadable" });
+      continue;
+    }
+    if (prs.value.length > 0) {
+      skipped.push({ issue, reason: "delivery PR exists" });
+      continue;
+    }
+    // `--jq .title` prints the title as plain text, not JSON.
+    const viewed = exec("gh", ["issue", "view", String(issue), "--json", "title", "--jq", ".title"], repoRoot);
+    const title = (viewed.stdout ?? "").trim();
+    if (viewed.status !== 0 || !title) {
+      skipped.push({ issue, reason: "issue unreadable" });
+      continue;
+    }
+    const runId = randomUUID();
+    const adopt = execJson(exec, auto[0], [...auto.slice(1), "adopt", "--issue", String(issue), "--owner", config.owner, "--run", runId, "--from-run", entry.runId, "--ttl-min", String(config.leaseTtlMin)], repoRoot);
+    if (!adopt.ok) {
+      skipped.push({ issue, reason: `adopt refused: ${adopt.error}` });
+      continue;
+    }
+    const plan = buildDispatchPlan({ issue, title, owner: config.owner, runId, repoRoot, stateDir, agent: config.agent, retryOf: { taskId, dispatchId } });
+    const readLeaseRuns = () => execJson(exec, auto[0], [...auto.slice(1), "status", "--issue", String(issue)], repoRoot).value?.runs ?? [];
+    const receipt = dispatch(plan, { exec, cwd: plan.worktree, readLeaseRuns, now: () => at, resumeFromRunId: entry.runId });
+    if (receipt.ok) {
+      // Written after the confirmed start, so a refused start never spends a retry.
+      writeAtomic(recordFile, `${JSON.stringify({ ...record, runId, resumeRetries: retries + 1 })}\n`);
+      dispatched.push({ issue, runId, resumedFrom: entry.runId, retryOf: dispatchId });
+      capacity -= 1;
+      continue;
+    }
+    errors.push(`auto-resume #${issue}: ${receipt.code}`);
+    // Nothing started: put the run back so a person or the next tick sees it.
+    execJson(exec, auto[0], [...auto.slice(1), "handover", "--issue", String(issue), "--owner", config.owner, "--run", runId], repoRoot);
+    if (receipt.code === "ORCA_UNREACHABLE") break;
+  }
+  return { dispatched, skipped, errors };
 }
 
 export function readStatus(stateDir) {

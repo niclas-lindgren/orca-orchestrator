@@ -1,5 +1,5 @@
 import { AUTO_COMMAND } from "../src/paths.mjs";
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -255,6 +255,43 @@ describe("orca adapter", () => {
     const receipt = dispatch(planFor(), { exec: second.exec, readLeaseRuns: second.readLeaseRuns, now: () => now });
     expect(receipt).toMatchObject({ ok: false, code: "DISPATCH_RECORD_EXISTS" });
     expect(second.calls).toEqual(["authCheck", "status", "worktreeShow"]);
+  });
+
+  describe("resuming a dead dispatch", () => {
+    const retryOf = { taskId: "task_1", dispatchId: "ctx_dead" };
+    const retryPlan = () => buildDispatchPlan({ issue: 1059, title: "pilot", owner, runId: "run-2", repoRoot, stateDir, retryOf });
+    const retryLease = [[{ ...lease, run_id: "run-2" }]];
+
+    it("retries the same Task instead of creating a new spec", () => {
+      const first = world({});
+      expect(dispatch(planFor(), { exec: first.exec, readLeaseRuns: first.readLeaseRuns, now: () => now }).ok).toBe(true);
+      const retry = world({}, retryLease);
+      const receipt = dispatch(retryPlan(), { exec: retry.exec, readLeaseRuns: retry.readLeaseRuns, now: () => now, resumeFromRunId: runId });
+      expect(receipt.ok).toBe(true);
+      const start = retry.commands.find((c) => c.name === "workerStart")!;
+      expect(start.args).toEqual(expect.arrayContaining(["--task", "task_1", "--retry-of", "ctx_dead"]));
+      expect(start.args).not.toContain("--spec");
+      expect(JSON.parse(readFileSync(recordPath(), "utf8"))).toMatchObject({ runId: "run-2", state: "started", resumeRetries: 0 });
+    });
+
+    it("keeps the record guard for a run that did not own it", () => {
+      const first = world({});
+      dispatch(planFor(), { exec: first.exec, readLeaseRuns: first.readLeaseRuns, now: () => now });
+      const other = world({}, retryLease);
+      expect(dispatch(retryPlan(), { exec: other.exec, readLeaseRuns: other.readLeaseRuns, now: () => now, resumeFromRunId: "someone-else" }))
+        .toMatchObject({ ok: false, code: "DISPATCH_RECORD_EXISTS" });
+      expect(other.calls).not.toContain("workerStart");
+    });
+
+    it("does not resume a record a different dispatch still owns", () => {
+      const first = world({});
+      dispatch(planFor(), { exec: first.exec, readLeaseRuns: first.readLeaseRuns, now: () => now });
+      // Rewrite the record into a state that is not a confirmed start.
+      writeFileSync(recordPath(), JSON.stringify({ issue: 1059, runId, owner, state: "unconfirmed" }));
+      const retry = world({}, retryLease);
+      expect(dispatch(retryPlan(), { exec: retry.exec, readLeaseRuns: retry.readLeaseRuns, now: () => now, resumeFromRunId: runId }))
+        .toMatchObject({ ok: false, code: "DISPATCH_RECORD_EXISTS" });
+    });
   });
 
   it("records a failed worker start as unconfirmed and never retries it", () => {
