@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { AUTO_COMMAND } from "../paths.mjs";
 import { isPaused } from "../auto/state.mjs";
 import { buildDispatchPlan, dispatch, leaseHeldBy } from "./adapter.mjs";
-import { worktreeWorkerStatus } from "./workers.mjs";
+import { nativeNext, workerIsIn, worktreeWorkerStatus } from "./workers.mjs";
 import { resolveIssueWorktree } from "../auto/worktrees.mjs";
 
 export const DEFAULT_CONFIG = Object.freeze({
@@ -250,6 +250,9 @@ export function reconcile({ repoRoot, stateDir, exec, now }) {
     }
     const worktree = buildDispatchPlan({ issue, title: "", owner: record.owner, runId: record.runId, repoRoot, stateDir, worktree: worktreeFor(repoRoot, issue, exec) }).worktree;
     const entry = { issue, owner: record.owner, runId: record.runId };
+    // Orca's own next step for this worker, if it gave one.
+    const mine = workers.find((w) => workerIsIn(w, worktree));
+    if (mine && nativeNext(mine)) entry.nativeNext = nativeNext(mine);
     const status = workersRead.ok ? workerStatus(workers, worktree) : "unreadable";
     // A worker Orca no longer lists is finished only when the lease store says the
     // issue reached a terminal state; otherwise it cannot be told from a lost worker.
@@ -478,6 +481,10 @@ function autoResume({ repoRoot, stateDir, exec, at, config, recon, free }) {
     const recordFile = join(stateDir, "orca-dispatch", `issue-${issue}.json`);
     const read = readJson(recordFile);
     const record = read.ok ? read.value : null;
+    if (typeof record?.autoResumeStopped === "string") {
+      skipped.push({ issue, reason: `auto-resume stopped after ${record.autoResumeStopped}; a person decides` });
+      continue;
+    }
     const retries = Number(record?.resumeRetries ?? 0);
     if (!Number.isInteger(retries) || retries >= config.autoResumeMaxRetries) {
       skipped.push({ issue, reason: retries >= config.autoResumeMaxRetries ? `auto-resume retries exhausted (${retries})` : "dispatch record unreadable" });
@@ -515,14 +522,17 @@ function autoResume({ repoRoot, stateDir, exec, at, config, recon, free }) {
     const plan = buildDispatchPlan({ issue, title, owner: config.owner, runId, repoRoot, stateDir, agent: config.agent, retryOf: { taskId, dispatchId } });
     const readLeaseRuns = () => execJson(exec, auto[0], [...auto.slice(1), "status", "--issue", String(issue)], repoRoot).value?.runs ?? [];
     const receipt = dispatch(plan, { exec, cwd: plan.worktree, readLeaseRuns, now: () => at, resumeFromRunId: entry.runId });
+    // The attempt is counted whether or not it started, and a refused start is
+    // permanent: Orca circuit-breaks a retry chain after three failed starts and
+    // a person alone may reopen it, so the dispatcher must not keep trying.
     if (receipt.ok) {
-      // Written after the confirmed start, so a refused start never spends a retry.
       writeAtomic(recordFile, `${JSON.stringify({ ...record, runId, resumeRetries: retries + 1 })}\n`);
       dispatched.push({ issue, runId, resumedFrom: entry.runId, retryOf: dispatchId });
       capacity -= 1;
       continue;
     }
     errors.push(`auto-resume #${issue}: ${receipt.code}`);
+    writeAtomic(recordFile, `${JSON.stringify({ ...record, resumeRetries: retries + 1, autoResumeStopped: receipt.code })}\n`);
     // Nothing started: put the run back so a person or the next tick sees it.
     execJson(exec, auto[0], [...auto.slice(1), "handover", "--issue", String(issue), "--owner", config.owner, "--run", runId], repoRoot);
     if (receipt.code === "ORCA_UNREACHABLE") break;

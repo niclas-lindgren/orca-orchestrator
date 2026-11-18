@@ -19,13 +19,22 @@ export function workerIsIn(worker, worktreePath) {
  * and unverifiable liveness do not prove exit (Orca's own safety rule).
  */
 export function classifyWorker(worker) {
+  // `liveness` is Orca's process accounting and the only field that proves exit.
   const liveness = String(worker?.liveness ?? "").toLowerCase();
   if (liveness === "live") return "live";
   if (liveness === "exited") return "dead";
   if (liveness === "unverifiable") return "unverifiable";
+  // Legacy hosts (before `liveness`) reported Task state only. Task status is not
+  // process accounting, so this fallback is a guess and never overrides liveness.
   const state = String(worker?.workerState ?? worker?.state ?? "").toLowerCase();
   return SETTLED_STATES.includes(state) ? "dead" : "live";
 }
+
+/**
+ * Orca's own next step for this worker (`worker-list`/`worker-show` `next`), if it
+ * gave one. Callers print it verbatim instead of inventing recovery commands.
+ */
+export const nativeNext = (worker) => (typeof worker?.next === "string" && worker.next.trim() ? worker.next.trim() : null);
 
 /** "none" | "live" | "unverifiable" | "dead" for every worker in one worktree. */
 export function worktreeWorkerStatus(workers, worktreePath) {

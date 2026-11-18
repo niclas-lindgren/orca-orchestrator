@@ -178,6 +178,20 @@ describe("resume report", () => {
     expect(branch).toBe("main");
   });
 
+  it("defers to Orca's own next step and separates the lease from the native binding", () => {
+    const path = addWorktree();
+    const db = openState(":memory:");
+    claimIssue(db, { issue: 7, owner: "a", runId: "r1", now: T0 });
+    bindNativeWorker(db, { issue: 7, owner: "a", runId: "r1", nativeRunId: "run_1", taskId: "task_1", dispatchId: "ctx_1", worktree: "id:wt", now: T0 });
+    const dead = report(db, world({ workers: [{ dispatchId: "ctx_1", taskId: "task_1", state: "stopped", liveness: "exited", workspace: `repo::${path}`, next: "orca orchestration worker-release --dispatch ctx_1" }] }));
+    expect(dead.workers[0].next).toBe("orca orchestration worker-release --dispatch ctx_1");
+    // Our lease transfer and Orca's Run binding are both named, neither restated.
+    expect(dead.next[0]).toContain("auto adopt");
+    expect(dead.next[1]).toContain("run-use --id run_1");
+    expect(dead.next.join("\n")).toContain("Orca next for ctx_1: orca orchestration worker-release --dispatch ctx_1");
+    rmSync(path, { recursive: true, force: true });
+  });
+
   it("refuses to recommend when a source is unreadable, and stops on a merged PR", () => {
     const db = openState(":memory:");
     expect(report(db, world({ ghDown: true }))).toMatchObject({ recommendation: "UNRELIABLE" });

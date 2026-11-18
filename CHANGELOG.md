@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 - 2026-11-18
+
+- De-duplicate against native Orca: `resume-report` prints Orca's own `next` for each worker instead of restating a recovery sequence, and names `run-use` as the native coordinator binding alongside `auto adopt` (the lease transfer).
+- Dispatcher auto-resume counts attempts, not successes, and stops permanently when a start is refused, so it never retries past Orca's circuit breaker.
+- Document the ownership boundary (Orca vs guard layer) in the README.
+- Pin `jsdom` to `^29` and declare `engines.node >=22.13.0`: jsdom 30/31 demand Node `^22.22.2`, so consumer installs on 22.22.1 printed `EBADENGINE` warnings for a test-only dependency.
+
 ## 0.4.0 - 2026-11-18
 
 - Add `orca resume-report --issue N`: a read-only join of lease store, Git, GitHub and native Orca that names the resume scenario and the commands for it.

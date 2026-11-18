@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { peekConfig } from "../config.mjs";
 import { getRun, isPaused, ledgerFor, reviewChatsFor, transfersFor } from "../auto/state.mjs";
 import { branchFor, resolveIssueWorktree } from "../auto/worktrees.mjs";
-import { classifyWorker, workerIsIn } from "./workers.mjs";
+import { classifyWorker, nativeNext, workerIsIn } from "./workers.mjs";
 
 /** @type {(command: string, args: string[], cwd: string) => { status: number | null, stdout: string, stderr: string }} */
 const defaultExec = (command, args, cwd) => spawnSync(command, args, { cwd, encoding: "utf8" });
@@ -89,7 +89,7 @@ export function resumeReport({ repoRoot, issue, db, stateDir, exec = defaultExec
   const all = listed.ok ? (listed.value.result?.workers ?? listed.value.workers ?? []) : [];
   const workers = all
     .filter((w) => (worktree && workerIsIn(w, worktree.path)) || (binding && w.dispatchId === binding.dispatchId))
-    .map((w) => ({ dispatchId: w.dispatchId, taskId: w.taskId ?? null, state: w.state ?? null, liveness: w.liveness ?? null, class: classifyWorker(w), terminalState: w.terminalState ?? null, agent: w.agent ?? null }));
+    .map((w) => ({ dispatchId: w.dispatchId, taskId: w.taskId ?? null, state: w.state ?? null, liveness: w.liveness ?? null, class: classifyWorker(w), terminalState: w.terminalState ?? null, agent: w.agent ?? null, next: nativeNext(w) }));
   const bound = binding ? workers.find((w) => w.dispatchId === binding.dispatchId) ?? null : null;
 
   const ledger = ledgerFor(db, { issue });
@@ -128,6 +128,8 @@ export function resumeReport({ repoRoot, issue, db, stateDir, exec = defaultExec
 }
 
 const NATIVE = "ORCA orchestration";
+// Orca's own recommendation for this worker, printed unchanged rather than restated.
+const native = (worker) => (worker?.next ? [`# Orca next for ${worker.dispatchId}: ${worker.next}`] : []);
 
 // The first matching rule wins; every uncertainty stops before any worker starts.
 function recommend({ run, leaseLive, binding, bound, worktree, branch, branchExists, prs, workers, errors, paused }) {
@@ -138,11 +140,18 @@ function recommend({ run, leaseLive, binding, bound, worktree, branch, branchExi
   if (run && ["COMPLETE", "PARKED", "NEEDS_DECISION"].includes(run.state)) return { code: "RUN_TERMINAL", reason: `run is ${run.state}${run.stop_reason ? ` (${run.stop_reason})` : ""}; a person must decide`, next: none };
   if (merged) return { code: "CLEANUP", reason: "a pull request for this branch is merged", next: () => ["GUARD orca cleanup --issue <n>"] };
   if (leaseLive) return { code: "LEASE_LIVE", reason: `lease is held by ${run.owner} until expiry; wait, or ask the holder to run \`auto handover\``, next: none };
-  const adopt = run ? [`GUARD auto adopt --issue <n> --owner NEW_OWNER --run NEW_RUN --from-run ${run.run_id} --ttl-min 30`] : ["GUARD auto claim --issue <n> --owner OWNER --run RUN_ID --ttl-min 30"];
+  // Two separate identities: the issue lease is ours (`adopt`), the native
+  // coordinator binding is Orca's (`run-use`). Neither replaces the other.
+  const adopt = run
+    ? [
+        `GUARD auto adopt --issue <n> --owner NEW_OWNER --run NEW_RUN --from-run ${run.run_id} --ttl-min 30`,
+        ...(binding?.runId ? [`${NATIVE} run-use --id ${binding.runId} --json  # Orca: bind this coordinator to the existing Run`] : []),
+      ]
+    : ["GUARD auto claim --issue <n> --owner OWNER --run RUN_ID --ttl-min 30"];
   const live = workers.filter((w) => w.class === "live");
   const unverifiable = workers.filter((w) => w.class === "unverifiable");
   if (live.length) {
-    return { code: "ATTACH_LIVE_WORKER", reason: "a worker is still running in this worktree; do not start another", next: () => [...adopt, `${NATIVE} run-use --id ${binding?.runId ?? "<native_run>"} --json  # bind to the old Run; its mail then reaches this coordinator`, `${NATIVE} worker-show --dispatch ${live[0].dispatchId} --json`, `${NATIVE} send --to dispatch:${live[0].dispatchId} --subject resume --body "<new coordinator, current state>"`] };
+    return { code: "ATTACH_LIVE_WORKER", reason: "a worker is still running in this worktree; do not start another", next: () => [...adopt, `${NATIVE} worker-show --dispatch ${live[0].dispatchId} --json`, `${NATIVE} send --to dispatch:${live[0].dispatchId} --subject resume --body "<new coordinator, current state>"`, ...native(live[0])] };
   }
   if (unverifiable.length) {
     return { code: "WORKER_UNVERIFIABLE", reason: "Orca cannot prove the worker exited; do not start, stop or abandon on silence", next: () => unverifiable.map((w) => `${NATIVE} worker-show --dispatch ${w.dispatchId} --json`) };
@@ -153,7 +162,7 @@ function recommend({ run, leaseLive, binding, bound, worktree, branch, branchExi
       return {
         code: "RESTART_WORKER_ON_SAME_TASK",
         reason: "the bound worker provably exited; retry on the same Task in the existing worktree",
-        next: () => [...adopt, `GUARD auto unbind-native --issue <n> --owner NEW_OWNER --run NEW_RUN --dispatch ${binding.dispatchId}`, `GUARD auto bind-native ... --task ${binding.taskId} --dispatch pending:<REQ> --worktree ${sel}`, `${NATIVE} worker-start --task ${binding.taskId} --retry-of ${binding.dispatchId} --worktree ${sel} --agent <agent> --retry-request <REQ>  # spec preface: specPreface`],
+        next: () => [...adopt, `GUARD auto unbind-native --issue <n> --owner NEW_OWNER --run NEW_RUN --dispatch ${binding.dispatchId}`, `GUARD auto bind-native ... --task ${binding.taskId} --dispatch pending:<REQ> --worktree ${sel}`, `${NATIVE} worker-start --task ${binding.taskId} --retry-of ${binding.dispatchId} --worktree ${sel} --agent <agent> --retry-request <REQ>  # spec preface: specPreface`, ...native(bound)],
       };
     }
     if (binding) {

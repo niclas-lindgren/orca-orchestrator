@@ -1,6 +1,6 @@
 {
   "name": "orca-orchestrator",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Native Orca issue-delivery skills with repository guards for leases, authority, review, repair, exact-head verification, and cleanup.",
   "type": "module",
   "keywords": [
@@ -40,7 +40,7 @@
     "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.13.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
@@ -51,7 +51,7 @@
     "check": "node --check bin/orca-orchestrator.mjs && node --check bin/orca-orchestrator-mcp.mjs && vitest run"
   },
   "devDependencies": {
-    "jsdom": "^31.0.0",
+    "jsdom": "^29.0.0",
     "vitest": "^3.2.0"
   }
 }

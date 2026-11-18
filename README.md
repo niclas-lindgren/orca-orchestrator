@@ -10,6 +10,24 @@ retries, lineage, and child worktrees. The skills load the current native contra
 **Installed guard adapters** (`orca_guard`): the Pi extension and Claude MCP plugin expose the
 repository-specific safety layer that native Orca does not provide: atomic issue leases, protected-
 domain authority, repair caps, fresh ChatGPT review, exact-head verification, and guarded cleanup.
+
+## What is ours and what is Orca's
+
+The guard layer must never become a second orchestrator. It holds only state native Orca has no
+concept of, and it **calls** Orca instead of re-implementing it.
+
+| Concern | Owner | Rule for this package |
+|---|---|---|
+| Runs, tasks, task DAGs, dependency order | Orca | Read ids; create a Run/Task only as part of one guarded dispatch. Never keep a parallel task graph. |
+| Worktrees (create, remove, lineage) | Orca | Never run `git worktree add`. `cleanup` delegates to `orca worktree rm`; resume guidance tells the operator to run `orca worktree create`. |
+| Worker lifecycle (start, stop, retry, abandon, release) | Orca | Call it. Retry only via `worker-start --task … --retry-of …`, and stop when Orca's breaker refuses. |
+| Proof of worker exit, and what to do next | Orca | Read `worker-list` `liveness` and print its `next` verbatim; do not invent a recovery sequence. |
+| Coordinator binding to an existing Run | Orca (`run-use`) | `auto adopt` transfers **our lease**, not Orca's binding; a successor runs both. |
+| Issue lease, fencing identity, lease TTL | us | No Orca equivalent. A lease names one session, one issue, one run id. |
+| Protected-domain authority and founder approval | us | Repository policy (`orca.config.json`) that Orca cannot know. |
+| Repair caps and the repair ledger | us | Review findings and their attempts are review-pipeline state. |
+| Fresh review chat identity and exact-head verification | us | Which ChatGPT chat belongs to which head. `orca tab list` stays the tab source of truth. |
+| Scheduling and pause | us | The dispatcher is single-shot, operator-enabled and pausable; it holds no timer. |
 The adapter launches the package's bundled guard CLI, so consumer repositories need neither an
 `orca-orchestrator` npm dependency nor `auto`/`orca` package scripts.
 
@@ -63,7 +81,11 @@ and authority gates. The initial release does not automate those downstream step
 
 ## Status
 
-v0.3: flow and fleet use native Orca for orchestration and worktree lifecycle. Pi and Claude expose
+v0.4: flow and fleet use native Orca for orchestration and worktree lifecycle. A lost coordinator or
+dead worker is resumed by transferring the issue lease (`auto adopt`) and then using Orca's own
+mechanisms: `run-use` to bind a coordinator, `worker-start --retry-of` to retry a Task in the
+existing worktree. `orca resume-report` reads the lease store, Git, GitHub and `worker-list` and says
+which case applies. Pi and Claude expose
 allowlisted installed-package guard adapters, issue leases bind durably to native run/task/dispatch
 receipts, and consumer repositories no longer need orchestration npm scripts or a package dependency.
 Proposal-only learning and independent promotion policy remain unchanged.

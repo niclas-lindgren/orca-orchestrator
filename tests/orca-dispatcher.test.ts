@@ -257,6 +257,21 @@ describe("dispatcher tick", () => {
       expect(w.state.calls).not.toContain("auto adopt");
     });
 
+    it("stops after a refused start instead of hammering Orca's breaker", async () => {
+      enable({ maxWorkers: 2, autoResume: true });
+      const w = world({ issues: [] });
+      const file = seed(w);
+      w.state.startOutcome = "fail";
+      const first = await run(w);
+      expect(first.errors).toContain("auto-resume #5: WORKER_START_FAILED");
+      expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ resumeRetries: 1, autoResumeStopped: "WORKER_START_FAILED" });
+      // The retry chain is Orca's to reopen: the next tick does not try again.
+      w.state.startOutcome = "ready";
+      const second = await run(w);
+      expect(second.skipped).toContainEqual({ issue: 5, reason: "auto-resume stopped after WORKER_START_FAILED; a person decides" });
+      expect(w.state.calls.filter((c) => c === "auto adopt")).toHaveLength(1);
+    });
+
     it("leaves an unverifiable worker alone", async () => {
       enable({ maxWorkers: 2, autoResume: true });
       const w = world({ issues: [] });

@@ -101,11 +101,11 @@ Use this when an issue already has a lease row, worktree, branch, worker or PR: 
    ```text
    GUARD auto adopt --issue ISSUE --owner OWNER --run RUN_ID --from-run OLD_RUN --ttl-min 30
    ```
-   `adopt` keeps the run's position, attempts, head and native binding, and fences the old identity. A live lease is refused: wait for expiry or have the holder run `GUARD auto handover --issue ISSUE --owner OLD_OWNER --run OLD_RUN`. With no run row yet, use `claim`.
+   `adopt` transfers **only this package's lease**, keeping the run's position, attempts, head and native binding, and fencing the old identity. Orca's own coordinator binding is separate: when the report names a native run, also run `"$ORCA" orchestration run-use --id NATIVE_RUN` so the old Run's mail reaches you. A live lease is refused: wait for expiry or have the holder run `GUARD auto handover --issue ISSUE --owner OLD_OWNER --run OLD_RUN`. With no run row yet, use `claim`.
    Founder approvals given to the old session are **not** inherited; ask again.
 3. Follow the recommendation:
    - `ATTACH_LIVE_WORKER`: do not start another worker. Bind to the old native Run with `"$ORCA" orchestration run-use --id NATIVE_RUN` so its mail reaches you (verified: a `worker_done` from a dead coordinator's worker is readable by a newly bound coordinator), then `worker-show` and `send --to dispatch:ID` to brief the worker. `send` to a finished worker reopens it as a follow-up Task.
-   - `RESTART_WORKER_ON_SAME_TASK`: unbind the exact dead dispatch, bind `pending:REQ`, then `worker-start --task TASK --retry-of DISPATCH --worktree id:WORKTREE --retry-request REQ`, as in `orca-fleet`.
+   - `RESTART_WORKER_ON_SAME_TASK`: unbind the exact dead dispatch, bind `pending:REQ`, then `worker-start --task TASK --retry-of DISPATCH --worktree id:WORKTREE --retry-request REQ`, as in `orca-fleet`. This is Orca's retry path, not a second one: after Orca's breaker trips, only the user reopens the Task.
    - `LAUNCH_WORKER_IN_EXISTING_WORKTREE`: `worker-start --spec ... --worktree id:WORKTREE --agent AGENT`, with the `specPreface` lines from the report so the worker continues the existing commits and uncommitted work instead of restarting. Do not use `new-child`.
    - `RECREATE_WORKTREE_FOR_BRANCH`: the branch has no registered worktree. Pass `--branch BRANCH --base-branch BRANCH`: verified on Orca 1.4, `--branch` alone creates a **new** branch from the default base (often suffixed `-2`) and leaves the existing commits behind. Confirm `result.worktree.branch` and its head before working; stop on a suffixed name.
    - `CLEANUP`: a PR is merged; go to cleanup.
@@ -171,7 +171,7 @@ After confirming the merge:
 
 1. Unbind any native fleet dispatch first; a single-flow worktree has no dispatch binding.
 2. Call `GUARD orca cleanup --issue ISSUE`. Cleanup checks merged PR, cleanliness, and live holders, then delegates removal and branch deletion to `orca worktree rm --delete-branch`; native Orca must prove deletion safe.
-3. Delete only review chats recorded for this issue (`resume-report` lists them as `reviewChats`, including a lost coordinator's). Write the expected chat identity to a file and call `GUARD orca review-delete --page PAGE --message-file FILE [--project-id ID]`. A mismatch must refuse deletion. After a confirmed deletion run `GUARD auto review-forget --issue ISSUE --owner OWNER --run RUN_ID --url CONVERSATION_URL`.
+3. Delete only review chats recorded for this issue (`orca tab list` remains the source of truth for open tabs; the record is provenance — which run and head a chat belongs to) (`resume-report` lists them as `reviewChats`, including a lost coordinator's). Write the expected chat identity to a file and call `GUARD orca review-delete --page PAGE --message-file FILE [--project-id ID]`. A mismatch must refuse deletion. After a confirmed deletion run `GUARD auto review-forget --issue ISSUE --owner OWNER --run RUN_ID --url CONVERSATION_URL`.
 4. Release the lease last (chat bookkeeping needs the lease holder):
    ```text
    GUARD auto release --issue ISSUE --owner OWNER --run RUN_ID

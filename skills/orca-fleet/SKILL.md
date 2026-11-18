@@ -140,7 +140,7 @@ GUARD orca resume-report --issue ISSUE
 GUARD auto adopt --issue ISSUE --owner OWNER --run NEW_RUN_ID --from-run OLD_RUN --ttl-min 30
 ```
 
-`adopt` needs the old lease to be expired or handed over (`GUARD auto handover` by the old coordinator) and keeps the native binding, which the new coordinator now owns. Then follow `recommendation`: attach to a live worker, or, only for a dispatch `worker-list` shows with `liveness: exited`, unbind it exactly and retry on the same Task with `--retry-of`, passing the report's `specPreface` in the spec. `liveness: unverifiable` is not exited: inspect with `worker-show` and stop. Founder approvals are not inherited.
+`adopt` needs the old lease to be expired or handed over (`GUARD auto handover` by the old coordinator) and keeps the native binding, which the new coordinator now owns. It transfers the issue lease only; bind to the native Run itself with `"$ORCA" orchestration run-use --id NATIVE_RUN`. Then follow `recommendation`: attach to a live worker, or, only for a dispatch `worker-list` shows with `liveness: exited`, unbind it exactly and retry on the same Task with `--retry-of`, passing the report's `specPreface` in the spec. `liveness: unverifiable` is not exited: inspect with `worker-show` and stop. Founder approvals are not inherited.
 
 ## Worker handoff gate
 
