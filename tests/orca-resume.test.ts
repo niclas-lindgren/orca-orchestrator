@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCommand } from "../src/auto/cli.mjs";
-import { adoptRun, bindNativeWorker, claimIssue, getRun, handoverRun, openState, recoverExpired, releaseLease, renewLease, transfersFor, unbindNativeWorker } from "../src/auto/state.mjs";
+import { adoptRun, bindNativeWorker, claimIssue, forgetReviewChat, getRun, handoverRun, openState, recordReviewChat, reviewChatsFor, recoverExpired, releaseLease, renewLease, transfersFor, unbindNativeWorker } from "../src/auto/state.mjs";
 import { classifyWorker, worktreeWorkerStatus } from "../src/orca/workers.mjs";
 import { resumePreface, resumeReport } from "../src/orca/resume.mjs";
 import { buildTaskSpec } from "../src/orca/adapter.mjs";
@@ -213,5 +213,32 @@ describe("adopt / handover commands", () => {
     expect(cmd(["adopt", "--issue", "5", "--owner", "b", "--run", "r2", "--from-run", "r1"], T0 + 3).result).toMatchObject({ code: "PAUSED" });
     cmd(["resume"], T0 + 4);
     expect(cmd(["adopt", "--issue", "5", "--owner", "b", "--run", "r2", "--from-run", "r1"], T0 + 5).result.ok).toBe(true);
+  });
+});
+
+describe("review chat bookkeeping", () => {
+  const url = "https://chatgpt.com/g/g-p-1/c/abc";
+  it("records idempotently under a live lease, survives adoption, and is forgotten by the holder", () => {
+    const db = openState(":memory:");
+    claimIssue(db, { issue: 7, owner: "a", runId: "r1", now: T0 });
+    expect(recordReviewChat(db, { issue: 7, owner: "a", runId: "r1", url, pageId: "p1", now: T0 })).toMatchObject({ ok: true, already: false });
+    expect(recordReviewChat(db, { issue: 7, owner: "a", runId: "r1", url, now: T0 })).toMatchObject({ ok: true, already: true });
+    expect(recordReviewChat(db, { issue: 7, owner: "b", runId: "r2", url: `${url}2`, now: T0 })).toMatchObject({ code: "LEASE_LOST" });
+    adoptRun(db, { issue: 7, owner: "b", runId: "r2", fromRunId: "r1", now: later });
+    expect(reviewChatsFor(db, 7)).toMatchObject([{ url, page_id: "p1", run_id: "r1" }]);
+    expect(forgetReviewChat(db, { issue: 7, owner: "a", runId: "r1", url })).toMatchObject({ code: "NOT_OWNER" });
+    expect(forgetReviewChat(db, { issue: 7, owner: "b", runId: "r2", url })).toMatchObject({ ok: true, removed: 1 });
+    expect(reviewChatsFor(db, 7)).toEqual([]);
+  });
+
+  it("validates the CLI arguments", () => {
+    const root = mkdtempSync(join(tmpdir(), "orca-rc-"));
+    const cmd = (args: string[], now = T0) => runCommand(args, { repoRoot: root, stateDir: join(root, "auto"), now });
+    cmd(["claim", "--issue", "5", "--owner", "a", "--run", "r1"]);
+    const base = ["review-record", "--issue", "5", "--owner", "a", "--run", "r1"];
+    expect(cmd([...base, "--url", "javascript:alert(1)"]).code).toBe(2);
+    expect(cmd([...base, "--url", url, "--head", "abc"]).code).toBe(2);
+    expect(cmd([...base, "--url", url, "--head", "a".repeat(40)]).result).toMatchObject({ ok: true });
+    rmSync(root, { recursive: true, force: true });
   });
 });

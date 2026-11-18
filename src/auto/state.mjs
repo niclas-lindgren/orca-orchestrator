@@ -150,6 +150,18 @@ export function openState(dbPath) {
     native_dispatch_id TEXT,
     recorded_at INTEGER NOT NULL
   )`);
+  // Fresh-review chats opened by a run, so a successor can find (and delete via
+  // the guarded review-delete) what a lost coordinator left in the browser.
+  db.exec(`CREATE TABLE IF NOT EXISTS review_chats (
+    issue INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    page_id TEXT,
+    owner TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    head_sha TEXT,
+    recorded_at INTEGER NOT NULL,
+    PRIMARY KEY (issue, url)
+  )`);
   return db;
 }
 
@@ -477,6 +489,31 @@ export function adoptRun(db, { issue, owner, runId, fromRunId, ttlMs = DEFAULT_T
       "INSERT INTO run_transfers (issue, kind, from_owner, from_run_id, to_owner, to_run_id, from_state, to_state, native_dispatch_id, recorded_at) VALUES (?, 'adopt', ?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(issue, current.owner, fromRunId, owner, runId, current.state, to, current.native_dispatch_id, now);
     return { ok: true, run: row(db, issue), resumedFrom: current.state };
+  });
+}
+
+// Idempotent per (issue, conversation url). Fenced by the live lease like every
+// other write the skills make on behalf of a run.
+export function recordReviewChat(db, { issue, owner, runId, pageId = null, url, headSha = null, now = Date.now() }) {
+  return immediate(db, () => {
+    const current = row(db, issue);
+    if (!current || !holds(current, owner, runId) || !leaseLive(current, now)) return { ok: false, code: "LEASE_LOST" };
+    const had = db.prepare("SELECT 1 FROM review_chats WHERE issue = ? AND url = ?").get(issue, url);
+    if (!had) db.prepare("INSERT INTO review_chats (issue, url, page_id, owner, run_id, head_sha, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(issue, url, pageId, owner, runId, headSha, now);
+    return { ok: true, already: Boolean(had) };
+  });
+}
+
+export function reviewChatsFor(db, issue) {
+  return db.prepare("SELECT url, page_id, owner, run_id, head_sha, recorded_at FROM review_chats WHERE issue = ? ORDER BY recorded_at, url").all(issue);
+}
+
+export function forgetReviewChat(db, { issue, owner, runId, url }) {
+  return immediate(db, () => {
+    const current = row(db, issue);
+    if (!current || !holds(current, owner, runId)) return { ok: false, code: "NOT_OWNER" };
+    const r = db.prepare("DELETE FROM review_chats WHERE issue = ? AND url = ?").run(issue, url);
+    return { ok: true, removed: Number(r.changes) };
   });
 }
 

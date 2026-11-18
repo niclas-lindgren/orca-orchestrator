@@ -4,7 +4,7 @@
 // the recommendation with the commands in `next`.
 import { spawnSync } from "node:child_process";
 import { peekConfig } from "../config.mjs";
-import { getRun, isPaused, ledgerFor, transfersFor } from "../auto/state.mjs";
+import { getRun, isPaused, ledgerFor, reviewChatsFor, transfersFor } from "../auto/state.mjs";
 import { branchFor, resolveIssueWorktree } from "../auto/worktrees.mjs";
 import { classifyWorker, workerIsIn } from "./workers.mjs";
 
@@ -119,6 +119,8 @@ export function resumeReport({ repoRoot, issue, db, stateDir, exec = defaultExec
     prs,
     workers,
     transfers: run ? transfersFor(db, issue).map(({ kind, from_owner, from_run_id, to_owner, to_run_id, from_state, to_state, recorded_at }) => ({ kind, from_owner, from_run_id, to_owner, to_run_id, from_state, to_state, recorded_at })) : [],
+    // Chats opened by earlier runs. Delete each only with the guarded review-delete and its first message; then `auto review-forget`.
+    reviewChats: reviewChatsFor(db, issue),
     resumeContext,
     specPreface: resumePreface(resumeContext),
     errors,

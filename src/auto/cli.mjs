@@ -1,13 +1,13 @@
 // Coordination entry points for the in-session delivery skills (#962, #991):
 // claim, renew, release, recover, pause, resume, auth-check, founder-resume,
-// repair-record, repair-status, handover, adopt, status.
+// repair-record, repair-status, handover, adopt, review-record, review-forget, status.
 // `orca-flow` (run from Claude Code via /goal or Pi via /skill:orca-flow) owns
 // the implementation, review and merge; this CLI only holds the shared issue
 // lease, native-worker binding, product-authority gate and repair ledger. Every
 // command prints one JSON document and starts no worker.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { adoptRun, bindNativeWorker, defaultStateDir, handoverRun, claimIssue, getRun, isPaused, openState, recoverExpired, releaseLease, renewLease, resumeFounderPark, unbindNativeWorker } from "./state.mjs";
+import { adoptRun, bindNativeWorker, defaultStateDir, forgetReviewChat, handoverRun, recordReviewChat, claimIssue, getRun, isPaused, openState, recoverExpired, releaseLease, renewLease, resumeFounderPark, unbindNativeWorker } from "./state.mjs";
 import { fetchIssue as fetchOneIssue } from "./selector.mjs";
 import { authCheck } from "./authcheck.mjs";
 import { fetchPr as fetchOnePr, repairRecord, repairStatus } from "./ledger.mjs";
@@ -181,6 +181,21 @@ export function runCommand(argv, { repoRoot, stateDir = defaultStateDir(repoRoot
       if (!record.ok) return { code: 1, result: { ok: false, code: "DISPATCH_ACTIVE", record: { owner: record.record.owner, runId: record.record.runId, state: record.record.state } } };
       const r = adoptRun(db, { ...who, fromRunId: flags["from-run"], ttlMs, now });
       if (r.ok) record.rewrite?.();
+      return { code: r.ok ? 0 : 1, result: r };
+    }
+    if (command === "review-record" || command === "review-forget") {
+      // Durable pointer to a fresh-review chat the run opened (after review-send,
+      // when the conversation url exists), so a successor can find and delete it.
+      const allowed = command === "review-record" ? ["issue", "owner", "run", "url", "page", "head"] : ["issue", "owner", "run", "url"];
+      const unknown = Object.keys(flags).filter((k) => !allowed.includes(k));
+      if (unknown.length) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: `unknown flag --${unknown[0]}` } };
+      const who = lease(flags);
+      if (who.error) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: who.error } };
+      if (!/^https:\/\/\S+$/.test(flags.url ?? "")) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: "--url must be the https conversation url" } };
+      if (flags.head !== undefined && !/^[0-9a-f]{40}$/.test(flags.head)) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: "--head must be a full 40-character commit id" } };
+      const r = command === "review-record"
+        ? recordReviewChat(db, { ...who, url: flags.url, pageId: flags.page ?? null, headSha: flags.head ?? null, now })
+        : forgetReviewChat(db, { ...who, url: flags.url });
       return { code: r.ok ? 0 : 1, result: r };
     }
     if (command === "repair-status") {

@@ -21,7 +21,7 @@ const ALLOWED = {
   auto: new Set([
     "status", "claim", "renew", "release", "recover", "pause", "resume",
     "auth-check", "founder-resume", "repair-record", "repair-status",
-    "bind-native", "unbind-native", "handover", "adopt",
+    "bind-native", "unbind-native", "handover", "adopt", "review-record", "review-forget",
   ]),
   orca: new Set(["verify-head", "resume-report", "cleanup", "review-open", "review-send", "review-wait", "review-read", "review-delete"]),
 } as const;

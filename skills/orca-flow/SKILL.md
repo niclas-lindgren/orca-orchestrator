@@ -134,6 +134,7 @@ Every merge attempt requires a fresh ChatGPT review of the current PR head.
 1. Call `GUARD orca review-open` and record the page id.
 2. Write a review request file naming repository, PR, exact head SHA, issue acceptance criteria, and asking for prioritized actionable findings with file/line evidence.
 3. Call `GUARD orca review-send --page PAGE --message-file FILE`.
+   Then record the conversation so a successor can find it: `GUARD auto review-record --issue ISSUE --owner OWNER --run RUN_ID --url CONVERSATION_URL --page PAGE --head SHA` (the `url` is in the `review-send` receipt).
 4. Call `review-wait`, then `review-read`. Silence, timeout, stale SHA, or ambiguous output is not approval.
 5. Before each repair, record the reviewed head and findings:
    ```text
@@ -170,11 +171,11 @@ After confirming the merge:
 
 1. Unbind any native fleet dispatch first; a single-flow worktree has no dispatch binding.
 2. Call `GUARD orca cleanup --issue ISSUE`. Cleanup checks merged PR, cleanliness, and live holders, then delegates removal and branch deletion to `orca worktree rm --delete-branch`; native Orca must prove deletion safe.
-3. Release the lease:
+3. Delete only review chats recorded for this issue (`resume-report` lists them as `reviewChats`, including a lost coordinator's). Write the expected chat identity to a file and call `GUARD orca review-delete --page PAGE --message-file FILE [--project-id ID]`. A mismatch must refuse deletion. After a confirmed deletion run `GUARD auto review-forget --issue ISSUE --owner OWNER --run RUN_ID --url CONVERSATION_URL`.
+4. Release the lease last (chat bookkeeping needs the lease holder):
    ```text
    GUARD auto release --issue ISSUE --owner OWNER --run RUN_ID
    ```
-4. Delete only review chats created by this run. Write the expected chat identity to a file and call `GUARD orca review-delete --page PAGE --message-file FILE [--project-id ID]`. A mismatch must refuse deletion.
 
 If cleanup is unsafe, leave the worktree and branch intact and report the exact blocker. Never use raw `git worktree remove`, `git branch -D`, or broad browser cleanup.
 
