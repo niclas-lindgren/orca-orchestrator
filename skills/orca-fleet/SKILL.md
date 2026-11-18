@@ -131,6 +131,17 @@ Do not infer failure from silence. An unverifiable worker is still potentially a
 
 For a replacement, first prove the old dispatch terminal and unbind it exactly. While the lease is still live, create and bind the new `pending:START_REQUEST` before calling `worker-start --retry-of OLD_DISPATCH --retry-request START_REQUEST`; finalize the binding with the new receipt. Ambiguity means leave the applicable old or provisional binding intact and stop.
 
+## Resuming after a lost coordinator or worker
+
+A bound dispatch blocks `claim`, `release` and `recover` for everyone but the exact owner and run that bound it, so a new coordinator cannot reach the issue by claiming. Use:
+
+```text
+GUARD orca resume-report --issue ISSUE
+GUARD auto adopt --issue ISSUE --owner OWNER --run NEW_RUN_ID --from-run OLD_RUN --ttl-min 30
+```
+
+`adopt` needs the old lease to be expired or handed over (`GUARD auto handover` by the old coordinator) and keeps the native binding, which the new coordinator now owns. Then follow `recommendation`: attach to a live worker, or, only for a dispatch `worker-list` shows with `liveness: exited`, unbind it exactly and retry on the same Task with `--retry-of`, passing the report's `specPreface` in the spec. `liveness: unverifiable` is not exited: inspect with `worker-show` and stop. Founder approvals are not inherited.
+
 ## Worker handoff gate
 
 A worker completion is a claim, not approval. Before accepting it, verify:

@@ -1,13 +1,13 @@
 // Coordination entry points for the in-session delivery skills (#962, #991):
 // claim, renew, release, recover, pause, resume, auth-check, founder-resume,
-// repair-record, repair-status, status.
+// repair-record, repair-status, handover, adopt, status.
 // `orca-flow` (run from Claude Code via /goal or Pi via /skill:orca-flow) owns
 // the implementation, review and merge; this CLI only holds the shared issue
 // lease, native-worker binding, product-authority gate and repair ledger. Every
 // command prints one JSON document and starts no worker.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { bindNativeWorker, defaultStateDir, claimIssue, getRun, isPaused, openState, recoverExpired, releaseLease, renewLease, resumeFounderPark, unbindNativeWorker } from "./state.mjs";
+import { adoptRun, bindNativeWorker, defaultStateDir, handoverRun, claimIssue, getRun, isPaused, openState, recoverExpired, releaseLease, renewLease, resumeFounderPark, unbindNativeWorker } from "./state.mjs";
 import { fetchIssue as fetchOneIssue } from "./selector.mjs";
 import { authCheck } from "./authcheck.mjs";
 import { fetchPr as fetchOnePr, repairRecord, repairStatus } from "./ledger.mjs";
@@ -97,6 +97,23 @@ function claimLease(db, { who, ttlMs, now, stateDir, afterLeaseAcquired = () => 
   return { code: 0, result: { ok: true, lease: claimed.run } };
 }
 
+// A legacy dispatch record names the run that started the worker. When that run is
+// adopted the record follows it, otherwise the dispatcher would renew the old
+// identity and the new coordinator would be refused by its own guard.
+function transferDispatchRecord(stateDir, { issue, owner, runId, fromRunId }) {
+  const file = join(stateDir, "orca-dispatch", `issue-${issue}.json`);
+  if (!existsSync(file)) return { ok: true };
+  let record;
+  try {
+    record = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return { ok: false, record: { state: "unreadable" } };
+  }
+  if (record === null || typeof record !== "object" || Array.isArray(record)) return { ok: false, record: { state: "malformed" } };
+  if (record.runId !== fromRunId) return INACTIVE_DISPATCH_STATES.has(record.state) ? { ok: true } : { ok: false, record };
+  return { ok: true, rewrite: () => writeFileSync(file, `${JSON.stringify({ ...record, owner, runId, adoptedFrom: { owner: record.owner, runId: fromRunId } })}\n`) };
+}
+
 export function runCommand(argv, { repoRoot, stateDir = defaultStateDir(repoRoot), now = Date.now(), fetchIssue = fetchOneIssue, fetchPr = fetchOnePr, clock = () => Date.now(), afterLeaseAcquired = () => {} }) {
   const [command, ...rest] = argv;
   const parsed = parseFlags(rest);
@@ -146,6 +163,25 @@ export function runCommand(argv, { repoRoot, stateDir = defaultStateDir(repoRoot
       if (paused) return { code: 1, result: { ok: false, code: "PAUSED" } };
       const result = resumeFounderPark(db, { ...who, ttlMs, now });
       return { code: result.ok ? 0 : 1, result };
+    }
+    if (command === "handover" || command === "adopt") {
+      const unknown = Object.keys(flags).filter((k) => !(command === "adopt" ? ["issue", "owner", "run", "from-run", "ttl-min"] : ["issue", "owner", "run"]).includes(k));
+      if (unknown.length) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: `unknown flag --${unknown[0]}` } };
+      const who = lease(flags);
+      if (who.error) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: who.error } };
+      if (command === "handover") {
+        const r = handoverRun(db, { ...who, now });
+        return { code: r.ok ? 0 : 1, result: r };
+      }
+      if (!flags["from-run"]) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: "--from-run is required: name the run you inspected with `orca resume-report`" } };
+      const ttlMs = flags["ttl-min"] ? Number(flags["ttl-min"]) * 60_000 : undefined;
+      if (ttlMs !== undefined && !(ttlMs > 0)) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: "--ttl-min must be positive" } };
+      if (paused) return { code: 1, result: { ok: false, code: "PAUSED" } };
+      const record = transferDispatchRecord(stateDir, { ...who, fromRunId: flags["from-run"] });
+      if (!record.ok) return { code: 1, result: { ok: false, code: "DISPATCH_ACTIVE", record: { owner: record.record.owner, runId: record.record.runId, state: record.record.state } } };
+      const r = adoptRun(db, { ...who, fromRunId: flags["from-run"], ttlMs, now });
+      if (r.ok) record.rewrite?.();
+      return { code: r.ok ? 0 : 1, result: r };
     }
     if (command === "repair-status") {
       const issue = Number(flags.issue);

@@ -92,6 +92,25 @@ Record the returned worktree selector and absolute path. If launch receipt is am
 
 Run all implementation, commits, pushes, and PR commands from the returned worktree.
 
+## Resume or take over an issue
+
+Use this when an issue already has a lease row, worktree, branch, worker or PR: the earlier agent died, the lease lapsed, or another coordinator is handing the issue over. Never "pick up from the branch" by editing it yourself, and never create a second worktree.
+
+1. Inspect, read-only: `GUARD orca resume-report --issue ISSUE`. Act on `recommendation`; `UNRELIABLE`, `LEASE_LIVE`, `WORKER_UNVERIFIABLE`, `BINDING_UNRESOLVED` and `RUN_TERMINAL` mean stop and report.
+2. Take the run under your own identity. Name the run you inspected:
+   ```text
+   GUARD auto adopt --issue ISSUE --owner OWNER --run RUN_ID --from-run OLD_RUN --ttl-min 30
+   ```
+   `adopt` keeps the run's position, attempts, head and native binding, and fences the old identity. A live lease is refused: wait for expiry or have the holder run `GUARD auto handover --issue ISSUE --owner OLD_OWNER --run OLD_RUN`. With no run row yet, use `claim`.
+   Founder approvals given to the old session are **not** inherited; ask again.
+3. Follow the recommendation:
+   - `ATTACH_LIVE_WORKER`: do not start another worker. Use `worker-show` and `send --to dispatch:ID` to brief the worker on the new coordinator.
+   - `RESTART_WORKER_ON_SAME_TASK`: unbind the exact dead dispatch, bind `pending:REQ`, then `worker-start --task TASK --retry-of DISPATCH --worktree id:WORKTREE --retry-request REQ`, as in `orca-fleet`.
+   - `LAUNCH_WORKER_IN_EXISTING_WORKTREE`: `worker-start --spec ... --worktree id:WORKTREE --agent AGENT`, with the `specPreface` lines from the report so the worker continues the existing commits and uncommitted work instead of restarting. Do not use `new-child`.
+   - `RECREATE_WORKTREE_FOR_BRANCH`: the branch has no registered worktree. Inspect the `worktree create` receipt; stop if it is ambiguous.
+   - `CLEANUP`: a PR is merged; go to cleanup.
+4. Before leaving, hand a live run to the next coordinator with `GUARD auto handover`, not by letting the lease lapse.
+
 ## Authority and implementation
 
 Before edits, run:

@@ -90,6 +90,9 @@ export function openState(dbPath) {
   if (!have.has("native_dispatch_id")) db.exec("ALTER TABLE runs ADD COLUMN native_dispatch_id TEXT");
   if (!have.has("native_worktree")) db.exec("ALTER TABLE runs ADD COLUMN native_worktree TEXT");
   if (!have.has("native_bound_at")) db.exec("ALTER TABLE runs ADD COLUMN native_bound_at INTEGER");
+  // The state an active run had when its lease lapsed, so a later adoption can
+  // continue from it instead of restarting at CLAIMED.
+  if (!have.has("expired_from_state")) db.exec("ALTER TABLE runs ADD COLUMN expired_from_state TEXT");
   db.exec(`CREATE TABLE IF NOT EXISTS repair_findings (
     issue INTEGER NOT NULL,
     run_id TEXT NOT NULL,
@@ -131,6 +134,21 @@ export function openState(dbPath) {
     domain TEXT NOT NULL,
     approved_at INTEGER NOT NULL,
     PRIMARY KEY (issue, run_id, block_id, domain)
+  )`);
+  // Append-only record of every handover and adoption of an issue's run, so the
+  // chain of coordinators stays reconstructable after the fenced identities change.
+  db.exec(`CREATE TABLE IF NOT EXISTS run_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    from_owner TEXT,
+    from_run_id TEXT,
+    to_owner TEXT,
+    to_run_id TEXT,
+    from_state TEXT,
+    to_state TEXT,
+    native_dispatch_id TEXT,
+    recorded_at INTEGER NOT NULL
   )`);
   return db;
 }
@@ -286,7 +304,7 @@ export function claimIssue(db, { issue, owner, runId, ttlMs = DEFAULT_TTL_MS, no
       // unless the same owner is already mid-run.
       const resume = holds(current, owner, runId) && [...ACTIVE, "NEEDS_DECISION"].includes(current.state);
       db.prepare(
-        "UPDATE runs SET state = ?, owner = ?, run_id = ?, lease_expires_at = ?, heartbeat_at = ?, stop_reason = NULL, updated_at = ? WHERE issue = ?",
+        "UPDATE runs SET state = ?, owner = ?, run_id = ?, lease_expires_at = ?, heartbeat_at = ?, stop_reason = NULL, expired_from_state = NULL, updated_at = ? WHERE issue = ?",
       ).run(resume ? current.state : "CLAIMED", owner, runId, expires, now, now, issue);
       // Scope evidence belongs to the run that read it. A different run starts
       // without a baseline until it records its own.
@@ -416,6 +434,56 @@ export function releaseLease(db, { issue, owner, runId, now = Date.now() }) {
   });
 }
 
+// Cooperative handover: the current holder gives up its lease at once, keeping
+// state and any native worker binding, so a successor can `adoptRun` without
+// waiting for the TTL. The holder is fenced out from this moment: renew, release
+// and every owner-checked write now fail for it with LEASE_LOST/NOT_OWNER paths.
+export function handoverRun(db, { issue, owner, runId, now = Date.now() }) {
+  return immediate(db, () => {
+    const current = row(db, issue);
+    if (!current || !holds(current, owner, runId)) return { ok: false, code: "NOT_OWNER" };
+    if (TERMINAL.includes(current.state)) return { ok: false, code: "ISSUE_TERMINAL", state: current.state };
+    db.prepare("UPDATE runs SET lease_expires_at = ?, updated_at = ? WHERE issue = ?").run(now, now, issue);
+    db.prepare(
+      "INSERT INTO run_transfers (issue, kind, from_owner, from_run_id, from_state, native_dispatch_id, recorded_at) VALUES (?, 'handover', ?, ?, ?, ?, ?)",
+    ).run(issue, owner, runId, current.state, current.native_dispatch_id, now);
+    return { ok: true, run: row(db, issue) };
+  });
+}
+
+// Takes over an issue's run under a new fenced identity. The caller must name the
+// run it saw (`fromRunId`), so it cannot adopt a run it has not inspected, and
+// the old lease must not be live (it lapsed, or the holder handed over).
+// Unlike `claimIssue` this keeps the run's position (state before expiry), its
+// attempts and head, any native worker binding (the successor now owns that
+// dispatch and can unbind or retry it), and moves the per-run repair counters
+// so a new run id does not reset them. Approvals given to the old run are
+// deliberately NOT carried over: the founder approved that session, not this one.
+export function adoptRun(db, { issue, owner, runId, fromRunId, ttlMs = DEFAULT_TTL_MS, now = Date.now() }) {
+  return immediate(db, () => {
+    const current = row(db, issue);
+    if (!current) return { ok: false, code: "NO_RUN" };
+    if (TERMINAL.includes(current.state) || current.state === "NEEDS_DECISION") return { ok: false, code: "ISSUE_TERMINAL", state: current.state };
+    if (current.run_id !== fromRunId) return { ok: false, code: "RUN_MISMATCH", expected: current.run_id };
+    if (runId === fromRunId) return { ok: false, code: "INVALID_ARGS", error: "--run must be a new run id" };
+    if (leaseLive(current, now)) return { ok: false, code: "LEASE_LIVE", holder: current.owner, expiresAt: current.lease_expires_at };
+    const from = current.state === "EXPIRED" ? (current.expired_from_state ?? "CLAIMED") : current.state;
+    const to = ACTIVE.includes(from) ? from : "CLAIMED";
+    db.prepare(
+      "UPDATE runs SET state = ?, owner = ?, run_id = ?, lease_expires_at = ?, heartbeat_at = ?, stop_reason = NULL, expired_from_state = NULL, scope_fingerprint = NULL, comments_acked = NULL, review_failures = 0, updated_at = ? WHERE issue = ?",
+    ).run(to, owner, runId, now + ttlMs, now, now, issue);
+    db.prepare("UPDATE repair_findings SET run_id = ? WHERE issue = ? AND run_id = ?").run(runId, issue, fromRunId);
+    db.prepare(
+      "INSERT INTO run_transfers (issue, kind, from_owner, from_run_id, to_owner, to_run_id, from_state, to_state, native_dispatch_id, recorded_at) VALUES (?, 'adopt', ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(issue, current.owner, fromRunId, owner, runId, current.state, to, current.native_dispatch_id, now);
+    return { ok: true, run: row(db, issue), resumedFrom: current.state };
+  });
+}
+
+export function transfersFor(db, issue) {
+  return db.prepare("SELECT * FROM run_transfers WHERE issue = ? ORDER BY id").all(issue);
+}
+
 // Marks active runs whose lease lapsed as EXPIRED so a later claim can recover
 // them. Returns the affected issues; it never deletes evidence.
 export function recoverExpired(db, { now = Date.now() } = {}) {
@@ -430,8 +498,8 @@ export function recoverExpired(db, { now = Date.now() } = {}) {
       // PARKED (the declared NEEDS_DECISION destination), never reset.
       const [next, reason] = state === "NEEDS_DECISION" ? ["PARKED", "NEEDS_DECISION"] : ["EXPIRED", "LEASE_EXPIRED"];
       db.prepare(
-        "UPDATE runs SET state = ?, owner = NULL, lease_expires_at = NULL, stop_reason = ?, updated_at = ? WHERE issue = ?",
-      ).run(next, reason, now, issue);
+        "UPDATE runs SET state = ?, expired_from_state = ?, owner = NULL, lease_expires_at = NULL, stop_reason = ?, updated_at = ? WHERE issue = ?",
+      ).run(next, next === "EXPIRED" ? state : null, reason, now, issue);
     }
     return stale.map((s) => s.issue);
   });

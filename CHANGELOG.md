@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add `orca resume-report --issue N`: a read-only join of lease store, Git, GitHub and native Orca that names the resume scenario and the commands for it.
+- Add `auto handover` and `auto adopt`: fenced, audited transfer of an issue's run (including a native worker binding) to a new coordinator; keeps position, attempts and repair counters, does not inherit founder approvals.
+- Record the pre-expiry state of an expired run so adoption continues from it.
+- Worker task specs can carry a resume preface (existing commits, uncommitted paths, PR, attempted findings).
+- Fix dispatcher worker matching to Orca's real `worker-list` shape (`workspace`, `state`, `liveness`); `unverifiable` liveness is no longer read as finished, and the issue worktree is resolved through Git instead of assuming `.worktrees/`.
+
 ## 0.3.0 - 2026-11-15
 
 - Move worktree, Task, worker supervision, retry, and cleanup lifecycle to native Orca CLI contracts.

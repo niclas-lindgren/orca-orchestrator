@@ -11,14 +11,16 @@ import { join } from "node:path";
 import { requireSetting, activeConfig } from "../config.mjs";
 import { AUTO_COMMAND } from "../paths.mjs";
 import { branchFor, worktreePathFor } from "../auto/worktrees.mjs";
+import { resumePreface } from "./resume.mjs";
 
 const TERMINAL_STATES = ["COMPLETE", "PARKED", "FAILED"];
 const PERMITTED_AUTHORITY = ["CLEAR", "FOUNDER_APPROVED"];
 
-export function buildTaskSpec({ issue, title, branch, worktree, gate = requireSetting("gate"), instructions = activeConfig().workerInstructions }) {
+export function buildTaskSpec({ issue, title, branch, worktree, gate = requireSetting("gate"), instructions = activeConfig().workerInstructions, resume = null }) {
   return [
     `Target: issue #${issue} "${title}", in the existing worktree ${worktree} on branch ${branch}.`,
     `Change: implement the acceptance criteria of issue #${issue} (read them with \`gh issue view ${issue} --comments\`).`,
+    ...(resume ? resumePreface(resume) : []),
     ...instructions,
     "Constraints: edit only inside this worktree, never the repository root. Do not run the auto CLI's `claim`, `renew`, `release` or `founder-resume`; the coordinator alone manages the lease. Do not push, open a pull request, merge or close the issue. Do not add a model or vendor Co-Authored-By trailer. Stage files by explicit path. Leave unrelated files alone. The worktree boundary is an instruction, not a filesystem guard: do not write outside it.",
     "Ownership: you alone edit this worktree while the task runs.",
@@ -27,10 +29,10 @@ export function buildTaskSpec({ issue, title, branch, worktree, gate = requireSe
   ].join("\n");
 }
 
-export function buildDispatchPlan({ issue, title, owner, runId, repoRoot, stateDir, agent = "claude", orca = "orca" }) {
-  const worktree = worktreePathFor(repoRoot, issue);
+export function buildDispatchPlan({ issue, title, owner, runId, repoRoot, stateDir, agent = "claude", orca = "orca", worktree: knownWorktree, resume = null }) {
+  const worktree = knownWorktree ?? worktreePathFor(repoRoot, issue);
   const branch = branchFor(issue);
-  const spec = buildTaskSpec({ issue, title, branch, worktree });
+  const spec = buildTaskSpec({ issue, title, branch, worktree, resume });
   const auto = [...AUTO_COMMAND];
   return {
     issue,

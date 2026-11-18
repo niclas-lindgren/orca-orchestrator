@@ -16,6 +16,8 @@ import { join } from "node:path";
 import { AUTO_COMMAND } from "../paths.mjs";
 import { isPaused } from "../auto/state.mjs";
 import { buildDispatchPlan, dispatch, leaseHeldBy } from "./adapter.mjs";
+import { worktreeWorkerStatus } from "./workers.mjs";
+import { resolveIssueWorktree } from "../auto/worktrees.mjs";
 
 export const DEFAULT_CONFIG = Object.freeze({
   enabled: false,
@@ -31,8 +33,6 @@ export const DEFAULT_CONFIG = Object.freeze({
 
 const STALE_LOCK_MS = 10 * 60_000;
 const TERMINAL = ["COMPLETE", "PARKED", "FAILED"];
-const DEAD_WORKER_STATES = ["stopped", "failed", "done", "released", "abandoned"];
-
 const dispatcherDir = (stateDir) => join(stateDir, "dispatcher");
 export const configFile = (stateDir) => join(stateDir, "dispatcher.json");
 export const statusFile = (stateDir) => join(dispatcherDir(stateDir), "status.json");
@@ -197,16 +197,19 @@ function readDispatchRecords(stateDir) {
     });
 }
 
-// "live": a matching worker that is not terminal. "finished": matching workers that
-// are all terminal. "unknown": nothing positively identifies the worker.
+// Native Orca may place the issue worktree anywhere; ask Git where it is and fall
+// back to the legacy path only when Git cannot say (worktree-show then fails closed).
+function worktreeFor(repoRoot, issue, exec) {
+  const found = resolveIssueWorktree(repoRoot, issue, exec);
+  return found.ok ? found.path : undefined;
+}
+
+// "live": a matching worker Orca says runs. "unverifiable": liveness unproven, never
+// treated as finished. "finished": all matching workers provably exited. "unknown":
+// nothing identifies the worker.
 function workerStatus(workers, worktree) {
-  const matching = workers.filter((worker) => {
-    const id = worker?.resource?.worktreeId ?? worker?.worktreeId;
-    return typeof id === "string" && id.endsWith(worktree);
-  });
-  if (matching.length === 0) return "unknown";
-  const dead = (worker) => DEAD_WORKER_STATES.includes(String(worker?.workerState ?? worker?.state ?? "").toLowerCase());
-  return matching.every(dead) ? "finished" : "live";
+  const status = worktreeWorkerStatus(workers, worktree);
+  return status === "none" ? "unknown" : status === "dead" ? "finished" : status;
 }
 
 /**
@@ -231,7 +234,7 @@ export function reconcile({ repoRoot, stateDir, exec, now }) {
       buckets.ambiguous.push({ issue, state: state ?? "unreadable" });
       continue;
     }
-    const worktree = buildDispatchPlan({ issue, title: "", owner: record.owner, runId: record.runId, repoRoot, stateDir }).worktree;
+    const worktree = buildDispatchPlan({ issue, title: "", owner: record.owner, runId: record.runId, repoRoot, stateDir, worktree: worktreeFor(repoRoot, issue, exec) }).worktree;
     const entry = { issue, owner: record.owner, runId: record.runId };
     const status = workersRead.ok ? workerStatus(workers, worktree) : "unreadable";
     // A worker Orca no longer lists is finished only when the lease store says the
@@ -400,7 +403,7 @@ export function tick({ repoRoot, stateDir, exec = defaultExec, now = Date.now, n
         skipped.push({ issue: candidate.issue, reason: "claim refused" });
         continue;
       }
-      const plan = buildDispatchPlan({ issue: candidate.issue, title: candidate.title, owner: config.owner, runId, repoRoot, stateDir, agent: config.agent });
+      const plan = buildDispatchPlan({ issue: candidate.issue, title: candidate.title, owner: config.owner, runId, repoRoot, stateDir, agent: config.agent, worktree: worktreeFor(repoRoot, candidate.issue, exec) });
       const readLeaseRuns = () => execJson(exec, auto[0], [...auto.slice(1), "status", "--issue", String(candidate.issue)], repoRoot).value?.runs ?? [];
       const receipt = dispatch(plan, { exec, cwd: plan.worktree, readLeaseRuns, now });
       if (receipt.ok) {

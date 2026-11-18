@@ -94,6 +94,23 @@ beforeEach(() => {
 afterEach(() => rmSync(stateDir, { recursive: true, force: true }));
 
 describe("dispatcher tick", () => {
+  it("reads Orca's real worker-list shape: workspace path, state and liveness", () => {
+    enable();
+    const w = world({ issues: [ready(5)] });
+    run(w);
+    const path = "/repo/.worktrees/issue-5";
+    const real = (liveness: string, state = "ready") => [{ dispatchId: "ctx_1", state, liveness, workspace: `repo::${path}` }];
+    w.state.workers = real("live");
+    expect(run(w)).toMatchObject({ outcome: "AT_CAPACITY", active: [{ issue: 5 }] });
+    w.state.workers = real("exited", "failed");
+    expect(run(w).review).toEqual([{ issue: 5, owner: "dispatcher", runId: "run-1" }]);
+    // Orca cannot prove the exit: never finished, always ambiguous.
+    w.state.workers = real("unverifiable", "failed");
+    const unverifiable = run(w);
+    expect(unverifiable.review).toEqual([]);
+    expect(unverifiable.recoverableFailures).toEqual([{ issue: 5, state: "started-unverifiable" }]);
+  });
+
   it("is disabled by default and touches nothing", () => {
     const w = world({ issues: [ready(5)] });
     expect(run(w).outcome).toBe("DISABLED");

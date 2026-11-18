@@ -5,6 +5,7 @@
 // `plan` prints the Orca calls and starts nothing. `dispatch` requires the issue
 // lease to be held by --owner/--run (`npm run auto -- claim` first), then starts
 // one supervised worker in the issue worktree. It prints one JSON document.
+//   orca resume-report --issue <n>   read-only: which resume/handover scenario applies and the commands for it
 //   npm run orca -- tick     one single-shot dispatcher wake (disabled until .local/auto/dispatcher.json enables it)
 //   npm run orca -- status   last dispatcher report, enabled and paused state
 import { spawnSync } from "node:child_process";
@@ -16,6 +17,7 @@ import { buildDispatchPlan, dispatch } from "./adapter.mjs";
 import { readStatus, tick } from "./dispatcher.mjs";
 import { verifyHead } from "./verify-head.mjs";
 import { cleanupIssue } from "./cleanup.mjs";
+import { resumeReport } from "./resume.mjs";
 import { reviewDelete, reviewOpen, reviewRead, reviewSend, reviewWait } from "./review-browser.mjs";
 
 export function parseArgs(argv) {
@@ -30,7 +32,7 @@ export function parseArgs(argv) {
     }
     flags[key.slice(2)] = value;
   }
-  if (command === "cleanup") {
+  if (command === "cleanup" || command === "resume-report") {
     const n = Number(flags.issue);
     return Number.isInteger(n) && n > 0 ? { command, issue: n } : { error: "--issue must be a positive integer" };
   }
@@ -67,6 +69,16 @@ export function main(argv, { repoRoot, exec = run, now = () => Date.now(), ownsL
   const parsed = parseArgs(argv);
   if (parsed.error) return { code: 2, result: { ok: false, code: "INVALID_ARGS", error: parsed.error } };
   const { command, issue, owner, runId, agent } = parsed;
+  if (command === "resume-report") {
+    // Read-only: joins lease store, Git, GitHub and Orca and names the resume scenario.
+    const db = openState(resolve(defaultStateDir(repoRoot), "state.db"));
+    try {
+      const report = resumeReport({ repoRoot, issue: parsed.issue, db, stateDir: defaultStateDir(repoRoot), exec, now: now() });
+      return { code: 0, result: report };
+    } finally {
+      db.close();
+    }
+  }
   if (command === "cleanup") {
     const receipt = cleanupIssue({ repoRoot, issue: parsed.issue, exec });
     return { code: receipt.ok ? 0 : 1, result: receipt };
