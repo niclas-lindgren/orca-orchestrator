@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add Pi-only `orca_worker_model` status/switch/result control for settled local supervised workers, using native Orca assignment/coordinator/custody evidence and Pi's public `setModel` API. No worker lifecycle, generic RPC, inference, request replay or retry engine is added.
+- Ask for a user-approved exact model order when unset; `/orca-model-policy` replaces it in existing Pi session history, scoped to the native Run/coordinator generation. Pi's global defaults remain unchanged.
+- Persist switch intent/receipts and compare session/old model before selection; reject stale/remote/non-Pi/busy targets and code/test/review failures. Ambiguous setter/transport outcomes require reconciliation, not blind replay.
+
 ## 0.4.2 - 2026-11-18
 
 - Fix dispatcher auto-resume reading the stored `worker-start` receipt: it is the CLI envelope, so `dispatchId`/`taskId` live under `result`. A resumed record now carries the new receipt instead of the dead one, and an unconfirmed start is no longer rewritten as `started`.

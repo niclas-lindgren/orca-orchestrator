@@ -1,6 +1,16 @@
 # Live Pi worker model control: source review
 
-## Recommendation
+## Implementation outcome
+
+The bounded implementation uses Pi's public `setModel` through a model-only private local endpoint, with native Orca CLI records supplying assignment/custody. It adds no lifecycle, dispatch registry, retry engine or model router. The reviewed `pi-rpc-socket` cannot be safely adopted through a client-only wrapper: its unrestricted receiver remains a bypass. Rather than vendor its broad RPC server or install an unguarded dependency, the package supplies only the demonstrated missing receiver seam. No third-party extension was installed, and no existing live worker was reloaded/switched.
+
+Policy uses Pi's existing session history and explicit user confirmation, scoped to native Run/coordinator generation; no provider order is hardcoded. See [operator contract](../../skills/orca-flow/references/model-control.md). Local same-OS-user access is trusted, as with the local Orca CLI; this is not isolation between mutually untrusted agents running as that user.
+
+Regression tests cover native evidence rejection, idle/queued checks, exact session/old-model comparison, configured next-only order, provider-error eligibility, authentication/model failures, persistent intent/duplicate IDs, dropped acknowledgments and private socket handling. An isolated SDK integration also exercises the actual installed Pi **1.5.2** extension context/registry/setter and persisted model-change history, preserving session/history/defaults without contacting inference providers. Native Orca responses are fixtures in those tests. A separate read-only call also successfully validated a real live Pi dispatch against current `worker-show`/`run-show` output. End-to-end switching in a supervised production worker, active compaction/retry races and remote hosts are **not** certified by this evidence. Remote control and abort-and-switch are unsupported. Receiver checks bracket mutation, but Pi and Orca are not a single transaction; post-attempt uncertainty is reported honestly.
+
+Validation commands: `npx vitest run tests/pi-model-control.test.ts tests/pi-package.test.ts tests/skills.test.ts`; repeat the SDK case with `PI_MODEL_CONTROL_SDK` set to the installed Pi `dist/index.js` and `-t 'real Pi SDK integration'`. The SDK test loads the package's actual extension entrypoint with isolated storage and fixture models. The full `npm run check -- --maxWorkers=1` still has the same three pre-existing `tests/replay-evaluation.test.ts` failures (`EVALUATOR_INVALID` versus expected evaluator outcomes); it is not a green full gate.
+
+## Original source-review recommendation
 
 **Add a small Orca guard adapter to existing `pi-rpc-socket` control**, pinned to the reviewed revision below; do not adopt it unguarded. It already exposes live `pi.setModel()` and state readback inside a terminal-mode Pi session, without an LLM tool call or replacing Pi. Reuse that seam rather than inventing routing or adopting a remote-mobile/daemon stack. The adapter must enforce identity/authorization **inside the receiving process before mutation**, not merely check in a coordinator-side client while leaving the original unrestricted socket reachable. This is a source-based recommendation, not a tested integration or authorization to install/change anything.
 

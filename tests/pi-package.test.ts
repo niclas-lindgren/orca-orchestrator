@@ -31,6 +31,18 @@ describe("Pi package", () => {
     expect(extension).not.toContain("npm run");
   });
 
+  it("loads the Pi-only model seam and routes provider failures to one canonical reference", () => {
+    expect(extension).toContain('registerModelControl(pi)');
+    expect(pkg.files).toContain("src");
+    const flow = readFileSync(join(root, "skills/orca-flow/SKILL.md"), "utf8");
+    const reference = readFileSync(join(root, "skills/orca-flow/references/model-control.md"), "utf8");
+    expect(flow).toContain("references/model-control.md");
+    expect(reference).toContain("If native Orca provides dispatch-addressed live Pi model control, use it.");
+    expect(reference).toContain("There is no default provider order.");
+    expect(reference).toContain("does not sandbox mutually untrusted processes");
+    expect(reference).toContain("never starts/stops/retries workers");
+  });
+
   it("bounds and cancels Claude MCP guard subprocesses", () => {
     expect(mcp).toContain("COMMAND_TIMEOUT_MS");
     expect(mcp).toContain('method === "notifications/cancelled"');

@@ -38,6 +38,8 @@ Every worker launch and retry uses the Pi harness: pass `--agent pi` explicitly,
 
 Confirm the dispatch receipt identifies Pi before handing work to it. Before reopening a settled worker with `send`, check its harness too: a follow-up reuses that worker's harness. To switch an existing worker in flight or continue work left by a non-Pi worker, read [harness migration](references/harness-migration.md) before stopping, retrying, or reopening anything. It covers confirmed exit, inherited edits, guarded binding replacement, same-Task retry, and completed-task follow-ups.
 
+For provider quota/rate-limit/availability failures in an existing Pi session, read [live model selection](references/model-control.md). Check native Orca capability first; use only the missing Pi control seam, an explicit user-approved model order, and a settled worker. Lifecycle and recovery remain native.
+
 ## Preconditions
 
 Fail closed before claiming anything.

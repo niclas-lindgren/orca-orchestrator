@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { registerModelControl } from "./model-control.ts";
 
 const cliPath = fileURLToPath(new URL("../bin/orca-orchestrator.mjs", import.meta.url));
 const StatusParams = Type.Object({
@@ -56,6 +57,8 @@ function conciseOutput(stdout: string, stderr: string): string {
 }
 
 export default function (pi: ExtensionAPI) {
+  registerModelControl(pi);
+
   function status(cwd: string, issue?: number, signal?: AbortSignal) {
     const args = [cliPath, "auto", "status"];
     if (issue !== undefined) args.push("--issue", String(issue));

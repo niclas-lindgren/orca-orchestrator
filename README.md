@@ -48,7 +48,11 @@ offline contract-evaluation harness, **not** an end-to-end agent productivity be
 an automatic merge authority. See [docs/evaluation.md](docs/evaluation.md).
 
 **Agent integrations**: `extensions/orca.ts` contributes Pi's allowlisted `orca_guard`, read-only
-`orca_status`, and `/orca-status [issue]`. `.mcp.json` starts the dependency-free Claude adapter in
+`orca_status`, `/orca-status [issue]`, and the narrow Pi-only `orca_worker_model` control seam with
+`/orca-model-policy`. Live selection uses native Orca assignment/custody and Pi's public setter,
+with user-approved Run-scoped order, settled-only switching and persisted reconciliation receipts;
+it adds no lifecycle or retry engine. See [live model selection](skills/orca-flow/references/model-control.md)
+for setup, local-only/security limits and acknowledgment semantics. `.mcp.json` starts the dependency-free Claude adapter in
 `bin/orca-orchestrator-mcp.mjs`. Both load commands from the installed package rather than the
 consumer checkout. The same package also loads the canonical skills below.
 
