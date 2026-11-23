@@ -32,6 +32,12 @@ In this document, `GUARD auto claim --issue 42 ...` means call that tool with `g
 
 Never use `npm run auto`, `npm run orca`, `npx orca-orchestrator`, or a repository-local `orca-orchestrator` dependency.
 
+## Worker harness
+
+Every worker launch and retry uses the Pi harness: pass `--agent pi` explicitly, regardless of the coordinator's harness. The harness is separate from the model/provider: add `--model provider/id` only when the user has selected a model; otherwise use Pi's configured model. Quota or provider failures do not authorize a harness switch. If Pi is unavailable, stop and report the blocker rather than falling back to Claude Code, Codex, or another harness.
+
+Confirm the dispatch receipt identifies Pi before handing work to it. Before reopening a settled worker with `send`, check its harness too: a follow-up reuses that worker's harness. For an existing non-Pi dispatch, preserve its worktree and edits, prove it stopped using native recovery, then use the same Task's guarded retry path with `--agent pi`; never start a concurrent replacement or silently reopen it in the old harness.
+
 ## Preconditions
 
 Fail closed before claiming anything.
@@ -105,8 +111,8 @@ Use this when an issue already has a lease row, worktree, branch, worker or PR: 
    Founder approvals given to the old session are **not** inherited; ask again.
 3. Follow the recommendation:
    - `ATTACH_LIVE_WORKER`: do not start another worker. Bind to the old native Run with `"$ORCA" orchestration run-use --id NATIVE_RUN` so its mail reaches you (verified: a `worker_done` from a dead coordinator's worker is readable by a newly bound coordinator), then `worker-show` and `send --to dispatch:ID` to brief the worker. `send` to a finished worker reopens it as a follow-up Task.
-   - `RESTART_WORKER_ON_SAME_TASK`: unbind the exact dead dispatch, bind `pending:REQ`, then `worker-start --task TASK --retry-of DISPATCH --worktree id:WORKTREE --retry-request REQ`, as in `orca-fleet`. This is Orca's retry path, not a second one: after Orca's breaker trips, only the user reopens the Task.
-   - `LAUNCH_WORKER_IN_EXISTING_WORKTREE`: `worker-start --spec ... --worktree id:WORKTREE --agent AGENT`, with the `specPreface` lines from the report so the worker continues the existing commits and uncommitted work instead of restarting. Do not use `new-child`.
+   - `RESTART_WORKER_ON_SAME_TASK`: unbind the exact dead dispatch, bind `pending:REQ`, then `worker-start --task TASK --retry-of DISPATCH --worktree id:WORKTREE --agent pi --retry-request REQ`, as in `orca-fleet`. This is Orca's retry path, not a second one: after Orca's breaker trips, only the user reopens the Task.
+   - `LAUNCH_WORKER_IN_EXISTING_WORKTREE`: `worker-start --spec ... --worktree id:WORKTREE --agent pi`, with the `specPreface` lines from the report so the worker continues the existing commits and uncommitted work instead of restarting. Do not use `new-child`.
    - `RECREATE_WORKTREE_FOR_BRANCH`: the branch has no registered worktree. Pass `--branch BRANCH --base-branch BRANCH`: verified on Orca 1.4, `--branch` alone creates a **new** branch from the default base (often suffixed `-2`) and leaves the existing commits behind. Confirm `result.worktree.branch` and its head before working; stop on a suffixed name.
    - `CLEANUP`: a PR is merged; go to cleanup.
 4. Before leaving, hand a live run to the next coordinator with `GUARD auto handover`, not by letting the lease lapse.

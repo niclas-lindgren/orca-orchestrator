@@ -33,6 +33,19 @@ describe("native Orca boundary", () => {
     expect(text).not.toMatch(/npm run auto --|npm run orca --|npx orca-orchestrator\s+(auto|orca)/);
   });
 
+  it("requires the Pi worker harness independently of the model choice", () => {
+    expect(flow).toContain("## Worker harness");
+    expect(flow).toMatch(/Every worker launch and retry uses the Pi harness/);
+    expect(flow).toMatch(/Pi is unavailable.*stop and report/);
+    expect(flow).toMatch(/Quota or provider failures.*do not authorize a harness switch/);
+    expect(flow).toMatch(/--model.*only when the user/);
+    expect(fleet).toContain("../orca-flow/SKILL.md#worker-harness");
+    for (const text of [flow, fleet]) {
+      expect(text).toContain("--agent pi");
+      expect(text).not.toMatch(/--agent (?:"?\$AGENT"?|AGENT|<agent>|claude|codex)/);
+    }
+  });
+
   it("uses native worktree lifecycle in the single flow", () => {
     expect(flow).toMatch(/worktree create/);
     expect(flow).toMatch(/--branch "agent\/issue-\$ISSUE"/);

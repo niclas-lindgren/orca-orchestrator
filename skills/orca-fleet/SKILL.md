@@ -76,7 +76,7 @@ Renew every live lease every 10 minutes and before/after long waits.
 
 ## Start one worker per issue
 
-Start at most three workers. Close the launch-to-binding race by recording a
+Start at most three workers. Follow the [worker harness policy](../orca-flow/SKILL.md#worker-harness) for every launch, retry, and repair follow-up. Close the launch-to-binding race by recording a
 provisional durable binding **before** native Orca can start the worker:
 
 1. Create the exact native issue worktree and retain its explicit selector:
@@ -94,7 +94,7 @@ provisional durable binding **before** native Orca can start the worker:
    "$ORCA" orchestration worker-start \
      --task "$TASK_ID" \
      --worktree "$WORKTREE_SELECTOR" \
-     --agent "$AGENT" \
+     --agent pi \
      --retry-request "$START_REQUEST" \
      --json
    ```
@@ -129,7 +129,7 @@ Do not infer failure from silence. An unverifiable worker is still potentially a
 - After three failed starts, the native circuit breaker requires explicit user direction before reopening work.
 - Use `worker-abandon` or `worker-release` only when the native contract authorizes it; never delete evidence to make a slot appear free.
 
-For a replacement, first prove the old dispatch terminal and unbind it exactly. While the lease is still live, create and bind the new `pending:START_REQUEST` before calling `worker-start --retry-of OLD_DISPATCH --retry-request START_REQUEST`; finalize the binding with the new receipt. Ambiguity means leave the applicable old or provisional binding intact and stop.
+For a replacement, first prove the old dispatch terminal and unbind it exactly. While the lease is still live, create and bind the new `pending:START_REQUEST` before calling `worker-start --agent pi --retry-of OLD_DISPATCH --retry-request START_REQUEST`; finalize the binding with the new receipt. Ambiguity means leave the applicable old or provisional binding intact and stop.
 
 ## Resuming after a lost coordinator or worker
 
