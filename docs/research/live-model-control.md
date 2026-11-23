@@ -1,0 +1,94 @@
+# Live Pi worker model control: source review
+
+## Recommendation
+
+**Add a small Orca guard adapter to existing `pi-rpc-socket` control**, pinned to the reviewed revision below; do not adopt it unguarded. It already exposes live `pi.setModel()` and state readback inside a terminal-mode Pi session, without an LLM tool call or replacing Pi. Reuse that seam rather than inventing routing or adopting a remote-mobile/daemon stack. The adapter must enforce identity/authorization **inside the receiving process before mutation**, not merely check in a coordinator-side client while leaving the original unrestricted socket reachable. This is a source-based recommendation, not a tested integration or authorization to install/change anything.
+
+No reviewed extension implements Orca Task/dispatch fencing. If the existing socket cannot be made private and restricted to the guarded entry point, reject integration rather than claiming a client wrapper makes it safe.
+
+## Verified native capability (installed Pi 1.5.2)
+
+Installed package: `/home/niclas-lindgren/.pi/agent/install/releases/1.5.2/node_modules/@earendil-works/pi-coding-agent`, repository `earendil-works/pi`, package version **1.5.2**; package manifest has no `gitHead`, so an exact upstream commit for these installed artifacts is not established.
+
+- `docs/extensions.md`, “pi.setModel(model)” (lines 1940–1954): changes current session, records history, restores on resume, does **not** alter defaults for new sessions; returns false if provider authentication is unconfigured. `dist/core/agent-session.js:2110–2127,2901–2906` verifies configured-auth check, authenticated model mutation, `appendModelChange`, thinking-level adjustment, and `model_select` emission. It can also throw (e.g. authentication check or event handler failure); boolean false is not the complete failure contract. No streaming/idle fence occurs in this setter.
+- Native RPC `set_model` accepts `{type:"set_model",provider,modelId,id?}` and returns correlated success/error; `dist/modes/rpc/rpc-mode.js:387–394` resolves the registry model and awaits `session.setModel`. This is the JSONL stdin/stdout **RPC mode** interface, not an already-running TUI's control socket. Do not restart a TUI into RPC mode to satisfy this task. Sources: [RPC commands](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc-commands.md), [RPC mode](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md); these moving links are navigation, installed 1.5.2 files are the versioned evidence.
+- Native virtual models already separate selected virtual model from physical per-request model; `route(request,ctx)` receives `reason:"retry"`, failed model/message, and branch state. Can deterministically choose another physical model with no classifier/LLM call. Routes cannot return another virtual model; throwing or returning a model without credentials ends in an error response. Retry routing depends on Pi actually initiating a retry: this does not prove every quota/auth/provider failure automatically retries. Sources: installed `docs/virtual-models.md:7–110`, [upstream documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/virtual-models.md).
+- A setter acknowledgment proves **selection**, not successful inference or interruption of an already-in-flight request. Authentication resolution can still depend on the target provider's credential flow. Changing models preserves session/history/cwd by using the same process/session, but Orca must independently preserve and verify Task/dispatch identity.
+- Installed `/home/niclas-lindgren/.pi/agent/extensions/orca-agent-status.ts:660–679` registers `orca-model` only under `isOmpRuntime()`. Current Pi does not get that command. Inspected file SHA-256: `6ad16f3b40c00eae24d5d9efeeea44c82be27fc6a4d625e2fd31435aa0c97292`; unchanged.
+
+## Candidates: primary-source findings
+
+All revisions below were read through GitHub raw/API and npm registry read-only. npm package metadata is evidence of declaration, **not** execution or compatibility testing.
+
+### 1. `pi-rpc-socket`: closest existing TUI control
+
+Repository [lukastk/pi-rpc-socket](https://github.com/lukastk/pi-rpc-socket), **0.2.0**, revision **`938d5877069f0d8f0b22ab4fd3983af6ca6064cb`**.
+
+Sources: [`index.ts`](https://github.com/lukastk/pi-rpc-socket/blob/938d5877069f0d8f0b22ab4fd3983af6ca6064cb/index.ts), [`commands.ts`](https://github.com/lukastk/pi-rpc-socket/blob/938d5877069f0d8f0b22ab4fd3983af6ca6064cb/commands.ts), [`package.json`](https://github.com/lukastk/pi-rpc-socket/blob/938d5877069f0d8f0b22ab4fd3983af6ca6064cb/package.json).
+
+- Transport: Node Unix-domain socket, JSONL, `<tmpdir>/pi-rpc-sockets/<sessionId>.sock`; path-length fallback from TMPDIR to `/tmp` or `/var/tmp`. `session_start` captures context/session ID; shutdown closes/unlinks socket. `getState` returns session ID, cwd, idle, selected provider/model/thinking level. No Task, dispatch, run-generation or expected-old-model fields/checks.
+- `set_model` refreshes registry, resolves available model, awaits `pi.setModel`, returns `{ok:true,model:{provider,id},id}` or `{ok:false,error,id}`. Direct requests allow optional IDs but do not deduplicate mutations. Resolver permits fuzzy substring/alias selection; guarded automation should require exact canonical provider/model IDs.
+- Protocol-2 `command:"/model ..."` returns an operation; polling `getOperation` distinguishes running/completed/failed. IDs reject duplicates; retention is one hour with 256-operation capacity; unknown/expired operation explicitly says not to auto-retry. Other resource-command outcomes can be only **submitted**, not completed. Direct `set_model` and `/model` both lack idle/pending-message guards.
+- No bearer/capability token, peer-identity check, explicit directory/socket chmod, owner/symlink validation, input-size cap, or dispatch fence in reviewed server. `mkdir({recursive:true})` and socket creation inherit host permissions/umask. Unconditionally unlinking the computed socket before listen is not an ownership proof. Shared temporary directory exposure requires hardening, not optimistic assumptions about the user's umask.
+- Broad surface also permits prompt injection, abort, system-prompt edits and commands; a guarded model endpoint must not leave those callable as a bypass.
+- Provider-outage behavior: model selection is ordinary socket/JS/API work, not an LLM request, so a broken current provider need not answer first. This is source-level control-path evidence only; it does not prove safe switching during a hung request, retry or compaction.
+- Compatibility: peer `@earendil-works/pi-coding-agent >=0.99.1`, development pinned to 0.99.1. Pi 1.5.2 satisfies the declared range and exposes the used public methods, but captured-context lifecycle and event/operation semantics require integration verification. No verified 1.5.2 test execution here.
+
+### 2. npm `pi-model-switch`: model-invoked tool, not external recovery control
+
+npm [metadata](https://registry.npmjs.org/pi-model-switch): **0.3.0**, `gitHead` **`b254ece4fe90d34938fdd69c975379041dce9c53`**; no repository field in that npm version. Matching primary repository/revision: [nicobailon/pi-model-switch](https://github.com/nicobailon/pi-model-switch), [`index.ts`](https://github.com/nicobailon/pi-model-switch/blob/b254ece4fe90d34938fdd69c975379041dce9c53/index.ts), [`manifest`](https://github.com/nicobailon/pi-model-switch/blob/b254ece4fe90d34938fdd69c975379041dce9c53/package.json). Do not substitute a search-result mirror for this source.
+
+- Registers `switch_model` tool for current/list/search/switch; activation awaits `pi.setModel`. No external transport or transport authentication. Uses Pi registry/provider authentication.
+- User alias files support ordered target arrays and optional thinking levels; activation tries candidates. This is availability/auth-based selection, not an automatic failed-provider inference retry loop. Tool throws for missing/ambiguous models and failed switch.
+- Normally requires the current model to produce the tool call, so cannot be relied on when the provider is unavailable. No dispatch authorization, external request acknowledgment or stale-command fencing.
+- Wildcard peers for `pi-ai`, `pi-coding-agent`, `typebox`; development Pi 0.87.1. Public setter exists in 1.5.2, but wildcard metadata does not establish runtime compatibility.
+
+### 3. `@yeliu84/pi-model-router`: reusable routing, not Orca control plane
+
+npm [metadata](https://registry.npmjs.org/@yeliu84/pi-model-router): **0.5.5**, repository [yeliu84/pi-model-router](https://github.com/yeliu84/pi-model-router), revision **`9339ed067e666cedd0f3f44219c0558a0616bc5e`**.
+
+Sources: [`extensions/provider.ts`](https://github.com/yeliu84/pi-model-router/blob/9339ed067e666cedd0f3f44219c0558a0616bc5e/extensions/provider.ts#L537-L546), [`config.ts`](https://github.com/yeliu84/pi-model-router/blob/9339ed067e666cedd0f3f44219c0558a0616bc5e/extensions/config.ts#L271-L287), [`index.ts`](https://github.com/yeliu84/pi-model-router/blob/9339ed067e666cedd0f3f44219c0558a0616bc5e/extensions/index.ts#L63-L78), [`package.json`](https://github.com/yeliu84/pi-model-router/blob/9339ed067e666cedd0f3f44219c0558a0616bc5e/package.json).
+
+- Registers native `router/<profile>` virtual models; internal selection helper awaits `pi.setModel`. No remote transport/authentication. Model registry supplies provider auth.
+- Per-profile/tier `model` + ordered `fallbacks` are configurable. Chain deduplicates `[primary,...fallbacks]`; skips unknown/unconfigured targets; throws when no target resolves. On native retry with failed model, rotates candidates after that failed model, eventually wrapping around; this is not a permanently exhausted-provider blacklist or unlimited failover guarantee.
+- Retry with previous decision reuses it rather than requiring classifier inference; classifier/LLM intent classification is optional elsewhere in routing. Thus deterministic routing can survive a current-provider failure **when Pi initiates retry**; source does not establish that every failure class will trigger it. Config parsing warnings/skipping invalid fallback entries are not Orca's required fail-closed policy validation or “ask if unset.”
+- State follows Pi branches and model selection; that is **not Orca dispatch scope**. No dispatch-addressed request/ack protocol. Wildcard Pi peers; actual virtual-model APIs exist in installed 1.5.2, integration untested.
+
+### 4. `pi-agent-extensions` control: transport exists, setter absent
+
+Repository [jayshah5696/pi-agent-extensions](https://github.com/jayshah5696/pi-agent-extensions), revision **`6fc2ce0c06924fe41136245ce89ce67c6386145f`**. Sources: [`extensions/control/index.ts`](https://github.com/jayshah5696/pi-agent-extensions/blob/6fc2ce0c06924fe41136245ce89ce67c6386145f/extensions/control/index.ts), [`package.json`](https://github.com/jayshah5696/pi-agent-extensions/blob/6fc2ce0c06924fe41136245ce89ce67c6386145f/package.json).
+
+- Opt-in `--session-control`, Unix JSONL socket `~/.pi/session-control/<session-id>.sock`, alias symlinks. Commands: send, get_message, get_summary, clear, abort, subscribe. Responses correlate optional ID with success/data/error; send acknowledgment is not completed inference.
+- **No `set_model` RPC and no model setter in this control handler.** Can abort/send without current-provider inference; summary explicitly calls a model and can fail. Its preferred summary-model order is not an acceptable worker fallback default.
+- No explicit chmod/token/peer authentication in the reviewed server; shared auth helper handles provider requests, not socket callers. No dispatch fence. Peers `>=0.80.10`, development Pi `^1.3.0`; not a tested 1.5.2 integration.
+- Less direct fit than `pi-rpc-socket`: would need both setter plumbing and guards.
+
+### 5. `remote-pi`: real remote setter, excessive scope/security tradeoffs
+
+npm [metadata](https://registry.npmjs.org/remote-pi): **0.7.0**, repository [jacobaraujo7/remote_pi](https://github.com/jacobaraujo7/remote_pi), npm `gitHead` **`0f9c763a23e0d7a1532cbb746a7c504aee26d709`** (reviewed this release revision, not moving HEAD).
+
+Sources: [`actions/handlers.ts`](https://github.com/jacobaraujo7/remote_pi/blob/0f9c763a23e0d7a1532cbb746a7c504aee26d709/pi-extension/src/actions/handlers.ts), [`protocol/types.ts`](https://github.com/jacobaraujo7/remote_pi/blob/0f9c763a23e0d7a1532cbb746a7c504aee26d709/pi-extension/src/protocol/types.ts), [`transport/relay_client.ts`](https://github.com/jacobaraujo7/remote_pi/blob/0f9c763a23e0d7a1532cbb746a7c504aee26d709/pi-extension/src/transport/relay_client.ts), [`peer_channel.ts`](https://github.com/jacobaraujo7/remote_pi/blob/0f9c763a23e0d7a1532cbb746a7c504aee26d709/pi-extension/src/transport/peer_channel.ts), [`index.ts`](https://github.com/jacobaraujo7/remote_pi/blob/0f9c763a23e0d7a1532cbb746a7c504aee26d709/pi-extension/src/index.ts).
+
+- `model_set {id,provider,model_id}` resolves exact registry model and awaits `pi.setModel`; replies `action_ok` / `action_error` with `in_reply_to`. Unknown model, absent auth and thrown errors are failures. No automatic configured worker-provider fallback chain in this handler. No current-provider LLM turn needed.
+- Transport is WebSocket relay, Ed25519 challenge/response identity, pairing token and known-owner gate. **Not end-to-end encrypted:** actual `PlainPeerChannel` explicitly base64-encodes JSON with no cipher/MAC; relay/TLS trust matters. Paired ownership is machine-level, not Task/dispatch authorization. Outbound replies are best-effort and dropped when relay send throws, so missing ACK is ambiguous.
+- Optional `onPersist` writes project model defaults; `index.ts` documents project settings persistence. This exceeds a dispatch-only selection and older comments about `pi.setModel` persistence disagree with current 1.5.2 semantics; do not copy them as fact.
+- Declares runtime dependencies Pi coding-agent/tui **`^0.79.10`**, which excludes 1.5.2. Broader mobile/mesh/daemon stack adds dependencies and lifecycle work unrelated to this seam. Compatibility and session identity are not established by its examples/tests.
+
+## Ownership boundary: native Orca first
+
+User requirement: reuse Orca's existing skills and CLI as the source of truth for orchestration. Before implementation, map each requirement below to the current native CLI and canonical skills; implement only a demonstrated missing capability. These are acceptance criteria, not a specification for a parallel orchestration subsystem.
+
+Keep Task/dispatch identity, ownership, lifecycle, retries, circuit breakers, messaging and escalation in their existing Orca mechanisms. Reference existing skills rather than copying their procedures. Keep configurable model-selection policy in existing configuration/skill mechanisms where supported. Any Pi-side adapter should supply only the missing live-session control and receiver-side checks, consuming native Orca authority rather than creating shadow leases, bindings, dispatch registries or retry machinery. If the required native authority cannot be verified, stop and surface the gap instead of inventing a substitute.
+
+## Required guard contract and remaining proof
+
+Proposed acceptance requirements, **not implemented or verified behavior**; satisfy these through existing Orca capabilities wherever available:
+
+1. Coordinator addresses `{terminalHandle,taskId,dispatchId,runGeneration,piSessionId,worktreeIdentity}` plus unique request ID, expected current model/revision, exact target provider/model, and reason. Receiver validates all against authoritative active assignment and current session immediately before mutation; reject missing/stale/mismatched identity, settled dispatch, unauthorized caller, ambiguous model or unknown policy. Session UUID/socket filename alone is insufficient.
+2. Private per-user runtime directory (0700), socket 0600, safe owner/path/symlink handling, bounded frames/timeouts and authenticated coordinator capability; bind capability to active dispatch and rotate/revoke on session/assignment replacement. Restrict the exposed operations so unguarded `set_model`, `/model`, arbitrary commands/prompts and abort cannot bypass policy.
+3. Serialize compare-and-set switching. Explicitly reject busy/queued/retrying/compacting states, or implement a separately authorized abort-and-settle boundary before changing models. Never silently kill/restart worker or change harness. Model selection does not prove the current request has stopped; retry/compaction race behavior remains an integration gap.
+4. ACK only after setter succeeds and selection readback agrees; include request ID, old/new model, effective thinking level, complete identity tuple and outcome. Deduplicate operations, expose queryable outcome, record history/Orca audit. Timeout/disconnect or setter exception after mutation means **unknown**, not safe blind replay; reconcile identity+state first. Selection ACK is distinct from successful next-provider inference.
+5. Fallback order is explicit, user-configurable and validated, preferably copied into dispatch-scoped policy rather than new-session defaults. **Ask user/coordinator if unset; do not infer provider order.** Current-run preference Claude → ChatGPT/OpenAI → NVIDIA is not a package default. Exhausted chain or disallowed error class must surface a native orchestration escalation, not ask the broken provider to choose a replacement. Do not replay tools or failed turns automatically without separate safe-continuation semantics.
+6. Deterministic error handling should use Pi error/retry events plus configured policy and coordinator authority, not an LLM call. Native virtual models can supply per-request fallback if later needed, but don't conflate physical retry routing with acknowledged session-model control. Establish eligible errors (quota, 429/5xx, auth, network, context, cancellation), retry budget/backoff, context/model capability checks and no-policy behavior explicitly.
+
+Before adoption: verify against **installed Pi 1.5.2** ordinary setter/readback, active-stream/retry/compaction boundaries, auth failure, current-provider outage with no LLM round trip, context replacement, terminal/worktree reuse, stale dispatch rejection, dropped ACK/reconciliation and unchanged session/history/Task/dispatch/worktree. No tests, installs, live worker manipulation, model changes, credential reads or code/config changes were performed for this research.
