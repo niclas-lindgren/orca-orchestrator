@@ -8,6 +8,7 @@ const root = join(__dirname, "..");
 const read = (name: string) => readFileSync(join(root, "skills", name, "SKILL.md"), "utf8");
 const flow = read("orca-flow");
 const fleet = read("orca-fleet");
+const harnessMigration = () => readFileSync(join(root, "skills", "orca-flow", "references", "harness-migration.md"), "utf8");
 
 describe("skill front matter", () => {
   it.each(["orca-flow", "orca-fleet"])("%s has a portable name matching its directory", (name) => {
@@ -44,6 +45,38 @@ describe("native Orca boundary", () => {
       expect(text).toContain("--agent pi");
       expect(text).not.toMatch(/--agent (?:"?\$AGENT"?|AGENT|<agent>|claude|codex)/);
     }
+  });
+
+  it("routes in-flight harness changes to one shared migration procedure", () => {
+    expect(flow).toContain("references/harness-migration.md");
+    const migration = harnessMigration();
+    expect(migration).toContain("references/recovery-and-cleanup.md");
+    expect(migration).toMatch(/does not transfer.*conversation history/i);
+    expect(migration).toMatch(/stop_unknown.*stop and report/);
+    expect(migration).toMatch(/abandon.*does not prove.*exit/i);
+    expect(migration).toMatch(/uncommitted changes/);
+    expect(migration).toMatch(/completed successfully/);
+    expect(migration).toMatch(/follow-up Task/);
+    expect(migration).toMatch(/circuit breaker/);
+  });
+
+  it("fences the old worker and binds provisionally before launching Pi", () => {
+    const migration = harnessMigration();
+    const stop = migration.indexOf("orchestration worker-stop");
+    const unbind = migration.indexOf("GUARD auto unbind-native");
+    const pending = migration.indexOf("--dispatch pending:START_REQUEST");
+    const start = migration.indexOf("orchestration worker-start");
+    const final = migration.indexOf("--dispatch NEW_DISPATCH");
+    expect(stop).toBeGreaterThan(-1);
+    expect(unbind).toBeGreaterThan(stop);
+    expect(pending).toBeGreaterThan(unbind);
+    expect(start).toBeGreaterThan(pending);
+    expect(final).toBeGreaterThan(start);
+    expect(migration).toContain('--retry-of "$OLD_DISPATCH"');
+    expect(migration).toContain('--worktree "$WORKTREE_SELECTOR"');
+    expect(migration).toContain("--agent pi");
+    expect(migration).toMatch(/same.*--retry-request/);
+    expect(migration).toMatch(/Confirm.*Pi.*receipt/);
   });
 
   it("uses native worktree lifecycle in the single flow", () => {
