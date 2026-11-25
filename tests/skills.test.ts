@@ -121,9 +121,31 @@ describe("orca-fleet delegated review", () => {
     for (const command of ["review-open", "review-send", "review-wait", "review-read", "review-record", "repair-record"]) expect(text).toContain(command);
     expect(text).toMatch(/new\*\* review chat for the \*\*new\*\* head/);
     expect(text).toMatch(/Silence, timeout, a stale or different SHA, or ambiguous output is \*\*not approval\*\*/);
-    expect(text).toMatch(/LEASE_LOST.*stop immediately/);
+    expect(text).toMatch(/On \*\*every other result\*\*.*\*\*stop immediately\*\*/);
     expect(text).toMatch(/never use more than three rounds/);
     expect(text).toMatch(/One review round at a time across the whole fleet/);
+  });
+
+  it("requires an explicit exclusive slot for probes and all worker/coordinator browser operations", () => {
+    const text = delegated();
+    expect(text).toMatch(/Before round 1.*explicit review-slot grant.*review-open/);
+    expect(text).toContain("guard commands do not provide a cross-worker browser lock");
+    expect(text).toContain("**every browser operation**");
+    for (const operation of ["round-0 probe", "review rounds and disputes", "coordinator acceptance reads", "chat cleanup"]) expect(text).toContain(operation);
+    expect(text).toContain("waits for an explicit grant naming its dispatch");
+    expect(text).toContain("Asking alone is not a grant");
+    expect(text).toContain("Hold the slot through the entire probe or review/dispute exchange");
+    expect(text).toContain("coordinator must also reserve the slot");
+    expect(text).toContain("silence or timeout is not release");
+  });
+
+  it("allows repairs only after a successful exact-head ledger receipt and stops on every refusal", () => {
+    const text = delegated();
+    expect(text).toContain("Repair only after `repair-record` succeeds (`ok: true`, action `RECORDED` or `ALREADY_RECORDED`)");
+    expect(text).toContain("for the exact issue, PR and reviewed head");
+    expect(text).toMatch(/On \*\*every other result\*\*, error, timeout or unreadable receipt, \*\*stop immediately\*\*/);
+    expect(text).toContain("do not edit, commit or push a repair");
+    for (const refusal of ["LEASE_LOST", "PAUSED", "ISSUE_BLOCKED", "PR_HEAD_MISMATCH", "DIRTY_WORKTREE", "GITHUB_UNAVAILABLE"]) expect(text).toContain(refusal);
   });
 
   it("surfaces reviewer disputes and does not let the worker steer the verdict", () => {
