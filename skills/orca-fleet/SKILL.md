@@ -191,3 +191,7 @@ Cleanup delegates worktree/branch removal to `orca worktree rm --delete-branch`;
 Delete only the fresh review chats created by this coordinator using guarded `review-delete` identity files. Do not bulk-delete browser state.
 
 Finish the native run only after every Task is terminal or explicitly abandoned with evidence. Report per issue: task, dispatch, PR, merged SHA or blocker, gate, review, exact-head, unbind, and cleanup receipts.
+
+## Local learning evidence (non-authorizing)
+
+Follow the installed package's `docs/learning.md`. Register each issue attempt after claim and before implementation with `learn start --input FILE`: use its guard run ID and issue, `workflow: "fleet"`, and the coordinator-chosen `reviewMode: "default"` or `"delegated"`. Do not use the shared native fleet Run ID for multiple issue observations. Ask workers to report measured review rounds/wait and explicit reviewer finding dispositions with their evidence; the coordinator records its measured interventions, lease-loss episodes and adoptions. Unknown metrics stay omitted, not zero. After each verified merge or terminal blocker/failure, submit one immutable `learn record --input FILE` for that issue attempt, then check `learn report` coverage. No raw chats, source, command output or secrets. Compare modes/versions with sample counts and coverage, never as causal proof. An unavailable CLI or failed learning write is a disclosed evidence gap, not authority to change delivery gates.
