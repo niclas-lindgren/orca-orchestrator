@@ -171,6 +171,18 @@ describe("orca-fleet delegated review", () => {
     expect(text).toContain("A missing or mismatched durable record is **not approved**");
   });
 
+  it("provides complete review and repair commands and requires full dispute history", () => {
+    const text = delegated();
+    expect(text).toContain("GUARD orca review-send --page PAGE_ID --message-file MESSAGE_FILE");
+    expect(text).toContain("GUARD orca review-wait --page PAGE_ID");
+    expect(text).toContain("GUARD auto repair-record --issue ISSUE --owner OWNER --run RUN_ID --pr PR --head REVIEWED_HEAD --findings-file FILE");
+    expect(text).toContain("check the successful receipt's `pr` and `headSha`");
+    expect(text).toContain("`review-read` returns only the latest assistant reply");
+    expect(text).toContain("**insufficient to verify dispute history**");
+    expect(text).toContain("inspect the complete exchange");
+    expect(text).toContain("If the full history is unavailable or cannot be matched to the recorded chat, treat the review as **not approved**");
+  });
+
   it("surfaces reviewer disputes and does not let the worker steer the verdict", () => {
     const text = delegated();
     expect(text).toMatch(/Every disagreement is reported to the coordinator verbatim/);
