@@ -183,6 +183,21 @@ describe("orca-fleet delegated review", () => {
     expect(text).toContain("If the full history is unavailable or cannot be matched to the recorded chat, treat the review as **not approved**");
   });
 
+  it("retains per-chat deletion identity and uses native recovery after a rejected terminal handoff", () => {
+    const text = delegated();
+    expect(text).toContain("`worker_done` is terminal evidence submission, never coordinator acceptance");
+    expect(text).toContain("Every created review chat (including earlier rounds)");
+    expect(text).toContain("exact first-message text and coordinator-accessible message-file path");
+    expect(text).toContain("coordinator-owned recovery storage outside the worker worktree");
+    expect(text).toContain("terminal `worker_done` dispatch cannot be treated as a live worker");
+    expect(text).toContain("../SKILL.md#supervision-and-recovery");
+    expect(text).toContain("same-Task `--retry-of` / `--retry-request`");
+    expect(text).toContain("Revalidate the live lease and dispatch binding");
+    expect(text).toContain("**before worker-worktree cleanup**");
+    expect(text).toContain("GUARD orca review-delete --page PAGE_ID --message-file MESSAGE_FILE");
+    expect(text).toContain("Only after verified deletion use `GUARD auto review-forget");
+  });
+
   it("surfaces reviewer disputes and does not let the worker steer the verdict", () => {
     const text = delegated();
     expect(text).toMatch(/Every disagreement is reported to the coordinator verbatim/);
