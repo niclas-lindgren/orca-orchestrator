@@ -75,6 +75,11 @@ npm run check      # syntax check + the full test suite
 The tests include the safety rules the skills must keep (`tests/skills.test.ts`), so editing a skill
 can fail a test that names the rule it would weaken.
 
+For shipped extension, guard, skill/reference or consumer-documentation changes, include a
+version bump and matching dated changelog entry in the same PR **before final review**.
+Keep package and lockfile versions synchronized; bump once per PR, not per repair commit.
+See [AGENTS.md](AGENTS.md) for the required release checklist and publication boundaries.
+
 ## Learning pilot
 
 The coordinating session should submit one sanitized observation per completed or blocked

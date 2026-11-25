@@ -51,6 +51,8 @@ Start from a freshly fetched default branch. Require a clean main checkout,
 create a unique branch and separate worktree for this one hypothesis.
 Do not take a product issue's lease or interfere with live workers.
 
+Read the canonical repository's `AGENTS.md` version and changelog policy. Before final verification and independent review, include the required version bump in `package.json` and both root package-lock version fields, plus a matching dated `CHANGELOG.md` entry in the same candidate. User-facing extension, guard, skill/reference and consumer-documentation changes all require this, even with Git branch installs. Bump once per PR, not per repair commit; reuse an appropriate bump already in the candidate. Do not create/push tags or publish packages without explicit user authorization; this skill remains draft-only.
+
 Create a narrow, falsifiable change with a focused regression test.
 Keep one hypothesis per PR. Avoid unrelated refactors or upgrades.
 Prevent optimistic conclusions from passing unit tests alone.

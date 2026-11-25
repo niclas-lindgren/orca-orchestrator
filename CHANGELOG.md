@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.3 - 2026-11-25
+
+- Require user-facing package changes to include a version bump and versioned changelog before final review; document this for repository agents and the `orca-improve` proposer.
+- Update Pi installation and update commands, explain pinned versus branch-tracking sources, and document when a release or restart is needed.
 - Add an opt-in delegated review loop for `orca-fleet` (`skills/orca-fleet/references/delegated-review.md`): a worker runs fresh-review and repair rounds on its own exact head through the existing guard commands and hands the coordinator a short summary. The default coordinator-reviewed path is unchanged. The coordinator keeps the lease, authority checks, CI, `verify-head`, merge and cleanup, and accepts a verdict only from the recorded review chat on the exact head, with every reviewer dispute surfaced. No guard code, authority, lease or review-freshness rule changes.
 - Add Pi-only `orca_worker_model` status/switch/result control for settled local supervised workers, using native Orca assignment/coordinator/custody evidence and Pi's public `setModel` API. No worker lifecycle, generic RPC, inference, request replay or retry engine is added.
 - Ask for a user-approved exact model order when unset; `/orca-model-policy` replaces it in existing Pi session history, scoped to the native Run/coordinator generation. Pi's global defaults remain unchanged.

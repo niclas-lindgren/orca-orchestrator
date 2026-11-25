@@ -18,6 +18,29 @@ describe("Pi package", () => {
     expect(pkg.files).toEqual(expect.arrayContaining([".claude-plugin", ".mcp.json", "extensions", "skills", "CHANGELOG.md"]));
   });
 
+  it("keeps release versions synchronized with a dated changelog entry", () => {
+    const lock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
+    expect(lock.version).toBe(pkg.version);
+    expect(lock.packages[""].version).toBe(pkg.version);
+    const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
+    const version = pkg.version.replace(/\./g, "\\.");
+    expect(changelog).toMatch(new RegExp(`^## ${version} - \\d{4}-\\d{2}-\\d{2}$`, "m"));
+  });
+
+  it("documents version bumps for agents and current consumer update commands", () => {
+    const policy = readFileSync(join(root, "AGENTS.md"), "utf8");
+    const improve = readFileSync(join(root, "skills/orca-improve/SKILL.md"), "utf8");
+    const installing = readFileSync(join(root, "docs/installing.md"), "utf8");
+    expect(policy).toContain("Bump **once per PR/release**");
+    expect(policy).toContain("before** independent exact-head review");
+    expect(improve).toContain("`AGENTS.md` version and changelog policy");
+    expect(improve).toContain("this skill remains draft-only");
+    expect(installing).toContain("pi update --extensions");
+    expect(installing).toContain("pi install git:github.com/niclas-lindgren/orca-orchestrator");
+    expect(installing).not.toContain("/package install");
+    expect(installing).not.toContain("/package update");
+  });
+
   it("keeps status read-only and exposes only allowlisted bundled guards", () => {
     expect(extension).toContain('name: "orca_status"');
     expect(extension).toContain('name: "orca_guard"');

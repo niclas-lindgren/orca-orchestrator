@@ -1,6 +1,6 @@
 # Installing `orca-orchestrator`
 
-`orca-orchestrator` v0.3 separates lifecycle from repository-specific safety:
+`orca-orchestrator` separates lifecycle from repository-specific safety:
 
 - the native Orca CLI owns runs, tasks, workers, retries, supervision, and worktrees;
 - the shared skill supplies the delivery procedure;
@@ -25,14 +25,31 @@ Verify native Orca before installation:
 
 ## Pi
 
-Install or update the package from GitHub:
+Install the package from GitHub (tracks the repository's default branch):
 
-```text
-/package install git:github.com/niclas-lindgren/orca-orchestrator
-/package update orca-orchestrator
+```bash
+pi install git:github.com/niclas-lindgren/orca-orchestrator
 ```
 
-Restart Pi after installation. The package contributes:
+Update an existing installation with either command:
+
+```bash
+pi update git:github.com/niclas-lindgren/orca-orchestrator
+pi update --extensions  # update all installed Pi packages, including skills
+```
+
+Use `pi list` to check the configured source. Add `--local` to `pi install` for project-local configuration; project packages load only after project trust is granted. Restart Pi after installation or update so the new extension and skills are loaded. `pi update` without a target updates Pi itself, not this package.
+
+### Versions and pinned installs
+
+- Unpinned Git sources (as above) or an explicit `@main` follow the branch. Updating fetches merged changes even if the package version is unchanged.
+- Git tags and commits are pinned. `pi update --extensions` does **not** advance a configured tag/commit. To upgrade, install the desired published ref, for example `pi install git:github.com/niclas-lindgren/orca-orchestrator@<published-tag>`, then verify the source with `pi list`.
+- Local-path packages load from that checkout: update the checkout itself, then restart Pi.
+- If using an npm source, consumers need a new version published to npm. Versioned npm specifications stay pinned; change the specification to select another version. Git merges or tags alone do not update npm.
+
+Maintainers bump the package version for shipped extension, guard, skill and consumer-documentation changes, and put their notes under a matching version heading in `CHANGELOG.md`. Pi's **Extension Updates** notification depends on the version increasing, including for Git installs. A version bump alone does not publish an npm package or create a Git tag; see the [development release policy](../AGENTS.md).
+
+The package contributes:
 
 - `orca-flow` and `orca-fleet` skills;
 - `orca_guard`, the allowlisted repository guard adapter;
