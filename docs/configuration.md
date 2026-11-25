@@ -10,6 +10,7 @@ tools and skills hold no repository-specific constants. Create a starter with `o
 | `stateDir` | optional (`.local/auto`) | Where the lease database and dispatch records live. **Ignore it in git.** |
 | `gate` | `verify-head`, worker task | `{ "command": "make", "args": ["check"] }`: the one local gate. The worker task and the independent final-head verification both read it, so they cannot name different commands. |
 | `review.projectId` / `review.projectName` | all `review-*` commands | The ChatGPT project every review and consult chat must live in. The id is the `g-p-...` segment of the project URL. |
+| `learning.captureCommands` | optional (`false`) | Literal `true` enables bounded, local command metadata in `learning.db`; no raw output and no change to guard authority or exit codes. See [learning.md](learning.md) for correlation, retention and capture gaps. |
 | `workerInstructions` | optional | Lines added to the worker task, for example "Follow AGENTS.md and the docs it routes to." |
 | `protectedDomains` | `auth-check` | Kinds of change that need a human decision (see below). With none configured nothing is ever flagged: configure them. |
 | `autonomy.profile` | metadata (default: `controlled-execution`) | `product-manager` for proactive Campsty product discovery and proposal preparation, or `controlled-execution` for Hockey/operator-directed work. **Not a grant of write, dispatch, or merge authority.** |

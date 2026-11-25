@@ -31,7 +31,7 @@ export function createImprovementPacket(db, repo, proposalId, { minOccurrences =
     "SELECT o.issue, o.run_id, o.head_sha, o.outcome, f.severity " +
     "FROM findings f INNER JOIN observations o " +
     "ON o.repo = f.repo AND o.run_id = f.run_id " +
-    "WHERE f.repo = ? AND f.category = ? AND f.key = ? " +
+    "WHERE f.repo = ? AND f.category = ? AND f.key = ? AND f.disposition != 'retracted' " +
     "ORDER BY o.run_id, o.issue"
   ).all(repo, category, key);
   if (rows.length < minOccurrences)

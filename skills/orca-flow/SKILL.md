@@ -190,3 +190,7 @@ If cleanup is unsafe, leave the worktree and branch intact and report the exact 
 ## Completion report
 
 Report the issue, PR, merged SHA, gate result, fresh-review result, exact-head receipt, cleanup receipt, and any retained recovery artifacts. Do not claim completion unless merge and post-merge checks are verified.
+
+## Local learning evidence (non-authorizing)
+
+Follow the installed package's `docs/learning.md`. After claim and before implementation, submit `learn start --input FILE` with this issue's guard run ID, issue number, `workflow: "flow"` and `reviewMode: "default"`. On verified merge or documented terminal blocker/failure, submit one immutable `learn record --input FILE` for that same identity. Track only measured duration and review metrics; omit unknowns, never infer costs. Capture explicit reviewer finding dispositions, not the worker's unsupported disagreement. Do not record raw chats, source, command output or secrets. Check `learn report` observation coverage rather than assuming logging succeeded. If the installed CLI is unavailable or persistence fails, disclose the gap; learning failure never changes lease, review or merge eligibility.

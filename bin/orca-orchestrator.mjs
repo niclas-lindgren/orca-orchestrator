@@ -16,6 +16,7 @@ import { CONFIG_FILE, ConfigError, loadConfig, resolveConfigRoot, resolveRepoRoo
 import { runCommand } from "../src/auto/cli.mjs";
 import { main as orcaMain } from "../src/orca/cli.mjs";
 import { runLearn } from "../src/learn/cli.mjs";
+import { captureCommand } from "../src/learn/telemetry.mjs";
 import { runEvaluation } from "../src/eval/replay.mjs";
 
 const STARTER = {
@@ -67,10 +68,21 @@ if (which === "init") {
 } else if (which === "auto" || which === "orca" || which === "learn") {
   try {
     setActiveConfig(loadConfig(resolveConfigRoot(process.cwd(), repoRoot), { repoRoot }));
-    const { code, result } = which === "auto" ? runCommand(rest, { repoRoot }) :
-      which === "orca" ? orcaMain(rest, { repoRoot }) : runLearn(rest, { repoRoot });
-    process.stdout.write(`${JSON.stringify(result)}\n`);
-    process.exitCode = code;
+    const started = performance.now();
+    let receipt;
+    try {
+      receipt = which === "auto" ? runCommand(rest, { repoRoot }) :
+        which === "orca" ? orcaMain(rest, { repoRoot }) : runLearn(rest, { repoRoot });
+    } finally {
+      if (which !== "learn") {
+        const telemetry = captureCommand({ repoRoot, group: which, args: rest,
+          code: receipt?.code ?? 1, result: receipt?.result, durationMs: performance.now() - started });
+        if (telemetry.enabled && (!telemetry.recorded || telemetry.registrationCode))
+          process.stderr.write("Orca learning: telemetry incomplete; delivery receipt unchanged.\n");
+      }
+    }
+    process.stdout.write(`${JSON.stringify(receipt.result)}\n`);
+    process.exitCode = receipt.code;
   } catch (error) {
     if (error instanceof ConfigError) fail(error.code, error.message);
     else throw error;

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-11-25
+
+- Add explicit `learn start` run registration with installed package version, workflow and review mode; report registered-run observation coverage, unknown provenance, outcome cohorts and sample counts for measured delegation metrics.
+- Add opt-in, repository-local guard-command telemetry (`learning.captureCommands`), capped at 10,000 retained events per repository. Capture only allowlisted command/result metadata and measured durations; preserve guard receipts and exit codes even when telemetry persistence fails. Successful claim/adopt receipts register unknown-mode runs automatically.
+- Add optional review finding dispositions. Retractions remain visible in disposition totals but are excluded from recurrence proposals and packets; downgraded findings use their reported final severity. Migrate legacy rows as `unspecified` without rewriting immutable evidence.
+- Document privacy boundaries, incomplete capture, explicit browser correlation and measured rather than inferred delegation outcomes. No raw transcripts, command output, central telemetry or automatic policy changes.
+
 ## 0.4.3 - 2026-11-25
 
 - Require user-facing package changes to include a version bump and versioned changelog before final review; document this for repository agents and the `orca-improve` proposer.

@@ -31,10 +31,13 @@ concept of, and it **calls** Orca instead of re-implementing it.
 The adapter launches the package's bundled guard CLI, so consumer repositories need neither an
 `orca-orchestrator` npm dependency nor `auto`/`orca` package scripts.
 
-**Learning (proposal-only)** (`orca-orchestrator learn record|report|propose|packet`): captures bounded,
-structured run outcomes in a repository-scoped SQLite store, reports recurring review/QA/workflow
-failures, and suggests investigations. It never runs agents, changes gates, creates issues or PRs,
-or updates its own code. See [docs/learning.md](docs/learning.md).
+**Learning (proposal-only)** (`orca-orchestrator learn start|record|report|propose|packet`): captures
+structured run outcomes in a repository-scoped SQLite store, reports observation coverage and
+version/workflow/review-mode cohorts, and suggests investigations of recurring findings. Optional
+`learning.captureCommands` collects a bounded local command-metadata trail, never transcripts or
+output. Retractions stay out of recurrence proposals; measured metrics retain their sample counts.
+It never runs agents, changes gates, creates issues or PRs, or updates its own code. These are
+observational signals, not proof of improvement. See [docs/learning.md](docs/learning.md).
 
 **Improvement proposer** (`orca-improve`): a separate Pi skill turns a recurring, aggregate-only
 learning packet into a narrowly scoped candidate and draft PR in the shared package. It never

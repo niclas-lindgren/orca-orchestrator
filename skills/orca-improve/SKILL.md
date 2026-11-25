@@ -30,6 +30,8 @@ orca-orchestrator learn propose --min-occurrences 3
 orca-orchestrator learn packet --id <category:key> --min-occurrences 3
 ```
 
+Inspect `learn report` observation coverage, unknown provenance and measured sample counts before interpreting recurrence. A missing terminal observation may be active or omitted, not a failed run; command retries are not unique defects. Explicitly retracted reviewer findings are excluded from proposals; downgraded findings use final severity, and legacy `unspecified` dispositions are not proof of confirmation. Compare version/workflow/review-mode cohorts only as observational signals, not causal improvements. Do not enable capture in another repository or export its metadata without permission.
+
 If there are no eligible proposals, stop with a report. Do not fabricate
 observations or lower the threshold to make work appear. Verify the selected
 hypothesis against actual code, existing tests and the outcome of affected
