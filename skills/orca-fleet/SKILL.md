@@ -158,7 +158,7 @@ Reject incomplete handoffs and continue on the same Task.
 
 ## Serialized review, repair, and merge
 
-This section is the default. If the coordinator chose [delegated review](references/delegated-review.md) before launching workers, steps 3 to 6 are run by the worker on its own head and the coordinator instead follows that reference's acceptance procedure; steps 1, 2, 7, 8 and 9 stay with the coordinator, and a verdict is accepted only from the recorded review chat on the exact head, never from the worker's report alone.
+This section is the default. If the coordinator chose [delegated review](references/delegated-review.md) before launching workers, steps 3 to 6 are run by the worker on its own head and the coordinator instead follows that reference's acceptance procedure; steps 1, 2, 7, 8 and 9 stay with the coordinator. Before the round-0 probe or each review round, the coordinator completes the handoff checks and steps 1 and 2, then explicitly authorizes review for the exact issue, PR, dispatch and head; a browser-slot grant is not review authorization. A verdict is accepted only from the recorded review chat on the exact head, never from the worker's report alone.
 
 Parallelism ends at review. Process one issue at a time through the full guarded pipeline:
 

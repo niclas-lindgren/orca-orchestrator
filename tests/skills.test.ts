@@ -148,6 +148,29 @@ describe("orca-fleet delegated review", () => {
     for (const refusal of ["LEASE_LOST", "PAUSED", "ISSUE_BLOCKED", "PR_HEAD_MISMATCH", "DIRTY_WORKTREE", "GITHUB_UNAVAILABLE"]) expect(text).toContain(refusal);
   });
 
+  it("requires coordinator eligibility and authority checks before authorizing each exact-head review", () => {
+    const text = delegated();
+    expect(fleet).toContain("Before the round-0 probe or each review round");
+    expect(fleet).toContain("completes the handoff checks and steps 1 and 2");
+    expect(text).toContain("ensure the PR is open, non-draft and current, renew the lease and repeat plan authority");
+    expect(text).toContain("exact issue, PR, dispatch and current head");
+    expect(text).toContain("**not review authorization**");
+    expect(text).toContain("A new head requires renewed coordinator authorization");
+    expect(text).toContain("A previous round's grant cannot be reused");
+  });
+
+  it("stops on unsuccessful review recording and independently checks durable final chat provenance", () => {
+    const text = delegated();
+    expect(text).toContain("--url CHAT_URL --page PAGE_ID --head HEAD");
+    expect(text).toContain("Require a successful `ok: true` receipt before continuing to wait, read, dispute or repair");
+    expect(text).toMatch(/On any refusal.*error, timeout or ambiguous recording result, stop immediately/);
+    expect(text).toContain("chat URL, page id, exact first message and receipt");
+    expect(text).toContain("Independently inspect `GUARD orca resume-report --issue ISSUE`");
+    expect(text).toContain("`reviewChats` must contain the final chat");
+    expect(text).toContain("matching `url`, `page_id`, `head_sha`, `owner` and `run_id`");
+    expect(text).toContain("A missing or mismatched durable record is **not approved**");
+  });
+
   it("surfaces reviewer disputes and does not let the worker steer the verdict", () => {
     const text = delegated();
     expect(text).toMatch(/Every disagreement is reported to the coordinator verbatim/);
