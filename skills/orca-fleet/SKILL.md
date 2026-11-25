@@ -52,7 +52,7 @@ For each issue create one durable Task. Express real dependencies with `--deps`;
 "$ORCA" orchestration task-create --run "$NATIVE_RUN" --spec "Implement issue #A completely; stop before coordinator-owned review and merge" --deps '[]' --json
 ```
 
-Record the run and task ids. The coordinator session remains the sole reviewer and merger.
+Record the run and task ids. The coordinator session remains the sole approver and merger. By default it also runs every review; see [delegated review](references/delegated-review.md) for the opt-in mode where workers run the review/repair rounds and the coordinator only decides.
 
 ## Claim before launch
 
@@ -107,7 +107,7 @@ provisional durable binding **before** native Orca can start the worker:
 
 The worker prompt must require branch `agent/issue-ISSUE`, issue acceptance tests,
 the configured gate, commits and push, and a handoff containing head SHA and
-evidence. A provisional binding blocks takeover even if the coordinator crashes
+evidence. With delegated review it must also carry OWNER, the current guard RUN_ID and the fixed review request template, and forbid the worker from claiming, renewing, adopting, releasing or resuming a founder park. A provisional binding blocks takeover even if the coordinator crashes
 or the lease expires during launch. On an ambiguous launch, keep the provisional
 binding and replay only with the same `--retry-request`. If launch is confirmed
 not to have started, unbind the exact `pending:START_REQUEST` before cleanup.
@@ -157,6 +157,8 @@ A worker completion is a claim, not approval. Before accepting it, verify:
 Reject incomplete handoffs and continue on the same Task.
 
 ## Serialized review, repair, and merge
+
+This section is the default. If the coordinator chose [delegated review](references/delegated-review.md) before launching workers, steps 3 to 6 are run by the worker on its own head and the coordinator instead follows that reference's acceptance procedure; steps 1, 2, 7, 8 and 9 stay with the coordinator, and a verdict is accepted only from the recorded review chat on the exact head, never from the worker's report alone.
 
 Parallelism ends at review. Process one issue at a time through the full guarded pipeline:
 

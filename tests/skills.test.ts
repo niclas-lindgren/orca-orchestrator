@@ -97,6 +97,59 @@ describe("native Orca boundary", () => {
   });
 });
 
+describe("orca-fleet delegated review", () => {
+  const delegated = () => readFileSync(join(root, "skills", "orca-fleet", "references", "delegated-review.md"), "utf8");
+
+  it("is opt-in and leaves the default coordinator review path in place", () => {
+    expect(fleet).toContain("references/delegated-review.md");
+    expect(fleet).toMatch(/This section is the default/);
+    expect(fleet).toMatch(/chose \[delegated review\].*before launching workers/);
+    expect(delegated()).toMatch(/A worker never opts itself in/);
+    expect(delegated()).toMatch(/fall back to the default coordinator-reviewed path/);
+  });
+
+  it("keeps lease, authority, verification and merge decisions with the coordinator", () => {
+    const text = delegated();
+    expect(text).toMatch(/must not claim, renew, adopt, release or `founder-resume`/);
+    for (const kept of ["`auth-check`", "`verify-head`", "the merge", "CI"]) expect(text).toContain(kept);
+    expect(text).toMatch(/A worker's report is a claim, not approval/);
+    expect(text).toMatch(/Delegation moves the review \*iterations\*, never the \*decision\*/);
+  });
+
+  it("reviews each exact head in a new chat, stops on ambiguity and bounds the loop with the repair ledger", () => {
+    const text = delegated();
+    for (const command of ["review-open", "review-send", "review-wait", "review-read", "review-record", "repair-record"]) expect(text).toContain(command);
+    expect(text).toMatch(/new\*\* review chat for the \*\*new\*\* head/);
+    expect(text).toMatch(/Silence, timeout, a stale or different SHA, or ambiguous output is \*\*not approval\*\*/);
+    expect(text).toMatch(/LEASE_LOST.*stop immediately/);
+    expect(text).toMatch(/never use more than three rounds/);
+    expect(text).toMatch(/One review round at a time across the whole fleet/);
+  });
+
+  it("surfaces reviewer disputes and does not let the worker steer the verdict", () => {
+    const text = delegated();
+    expect(text).toMatch(/Every disagreement is reported to the coordinator verbatim/);
+    expect(text).toMatch(/did not explicitly retract or downgrade stays open/);
+    expect(text).toMatch(/must not steer the verdict/);
+  });
+
+  it("accepts a verdict only from the recorded chat on the exact head", () => {
+    const text = delegated();
+    expect(text).toMatch(/reviewed SHA == final head == PR head/);
+    expect(text).toMatch(/from the recorded chat itself/);
+    expect(text).toMatch(/Any later commit invalidates the review/);
+    expect(text).toMatch(/treat it as \*\*not approved\*\*/);
+    const accept = text.indexOf("## What the coordinator does with it");
+    expect(accept).toBeGreaterThan(-1);
+    expect(text.indexOf("auth-check --phase merge", accept)).toBeLessThan(text.indexOf("verify-head", accept));
+    expect(text).toContain("--match-head-commit");
+  });
+
+  it("names no specific repository or product", () => {
+    expect(delegated()).not.toMatch(/hockey|campsty|camping|region-viken|niclas-lindgren\/(?!orca)|RVV|season/i);
+  });
+});
+
 describe("orca-flow safety", () => {
   it("fails preflight before claim when native Orca, adapter, browser or GitHub is unavailable", () => {
     expect(flow).toMatch(/Fail closed before claiming anything/);
