@@ -97,6 +97,131 @@ describe("native Orca boundary", () => {
   });
 });
 
+describe("orca-fleet delegated review", () => {
+  const delegated = () => readFileSync(join(root, "skills", "orca-fleet", "references", "delegated-review.md"), "utf8");
+
+  it("is opt-in and leaves the default coordinator review path in place", () => {
+    expect(fleet).toContain("references/delegated-review.md");
+    expect(fleet).toMatch(/This section is the default/);
+    expect(fleet).toMatch(/chose \[delegated review\].*before launching workers/);
+    expect(delegated()).toMatch(/A worker never opts itself in/);
+    expect(delegated()).toMatch(/fall back to the default coordinator-reviewed path/);
+  });
+
+  it("keeps lease, authority, verification and merge decisions with the coordinator", () => {
+    const text = delegated();
+    expect(text).toMatch(/must not claim, renew, adopt, release or `founder-resume`/);
+    for (const kept of ["`auth-check`", "`verify-head`", "the merge", "CI"]) expect(text).toContain(kept);
+    expect(text).toMatch(/A worker's report is a claim, not approval/);
+    expect(text).toMatch(/Delegation moves the review \*iterations\*, never the \*decision\*/);
+  });
+
+  it("reviews each exact head in a new chat, stops on ambiguity and bounds the loop with the repair ledger", () => {
+    const text = delegated();
+    for (const command of ["review-open", "review-send", "review-wait", "review-read", "review-record", "repair-record"]) expect(text).toContain(command);
+    expect(text).toMatch(/new\*\* review chat for the \*\*new\*\* head/);
+    expect(text).toMatch(/Silence, timeout, a stale or different SHA, or ambiguous output is \*\*not approval\*\*/);
+    expect(text).toMatch(/On \*\*every other result\*\*.*\*\*stop immediately\*\*/);
+    expect(text).toMatch(/never use more than three rounds/);
+    expect(text).toMatch(/One review round at a time across the whole fleet/);
+  });
+
+  it("requires an explicit exclusive slot for probes and all worker/coordinator browser operations", () => {
+    const text = delegated();
+    expect(text).toMatch(/Before round 1.*explicit review-slot grant.*review-open/);
+    expect(text).toContain("guard commands do not provide a cross-worker browser lock");
+    expect(text).toContain("**every browser operation**");
+    for (const operation of ["round-0 probe", "review rounds and disputes", "coordinator acceptance reads", "chat cleanup"]) expect(text).toContain(operation);
+    expect(text).toContain("waits for an explicit grant naming its dispatch");
+    expect(text).toContain("Asking alone is not a grant");
+    expect(text).toContain("Hold the slot through the entire probe or review/dispute exchange");
+    expect(text).toContain("coordinator must also reserve the slot");
+    expect(text).toContain("silence or timeout is not release");
+  });
+
+  it("allows repairs only after a successful exact-head ledger receipt and stops on every refusal", () => {
+    const text = delegated();
+    expect(text).toContain("Repair only after `repair-record` succeeds (`ok: true`, action `RECORDED` or `ALREADY_RECORDED`)");
+    expect(text).toContain("for the exact issue, PR and reviewed head");
+    expect(text).toMatch(/On \*\*every other result\*\*, error, timeout or unreadable receipt, \*\*stop immediately\*\*/);
+    expect(text).toContain("do not edit, commit or push a repair");
+    for (const refusal of ["LEASE_LOST", "PAUSED", "ISSUE_BLOCKED", "PR_HEAD_MISMATCH", "DIRTY_WORKTREE", "GITHUB_UNAVAILABLE"]) expect(text).toContain(refusal);
+  });
+
+  it("requires coordinator eligibility and authority checks before authorizing each exact-head review", () => {
+    const text = delegated();
+    expect(fleet).toContain("Before the round-0 probe or each review round");
+    expect(fleet).toContain("completes the handoff checks and steps 1 and 2");
+    expect(text).toContain("ensure the PR is open, non-draft and current, renew the lease and repeat plan authority");
+    expect(text).toContain("exact issue, PR, dispatch and current head");
+    expect(text).toContain("**not review authorization**");
+    expect(text).toContain("A new head requires renewed coordinator authorization");
+    expect(text).toContain("A previous round's grant cannot be reused");
+  });
+
+  it("stops on unsuccessful review recording and independently checks durable final chat provenance", () => {
+    const text = delegated();
+    expect(text).toContain("--url CHAT_URL --page PAGE_ID --head HEAD");
+    expect(text).toContain("Require a successful `ok: true` receipt before continuing to wait, read, dispute or repair");
+    expect(text).toMatch(/On any refusal.*error, timeout or ambiguous recording result, stop immediately/);
+    expect(text).toContain("chat URL, page id, exact first message and receipt");
+    expect(text).toContain("Independently inspect `GUARD orca resume-report --issue ISSUE`");
+    expect(text).toContain("`reviewChats` must contain the final chat");
+    expect(text).toContain("matching `url`, `page_id`, `head_sha`, `owner` and `run_id`");
+    expect(text).toContain("A missing or mismatched durable record is **not approved**");
+  });
+
+  it("provides complete review and repair commands and requires full dispute history", () => {
+    const text = delegated();
+    expect(text).toContain("GUARD orca review-send --page PAGE_ID --message-file MESSAGE_FILE");
+    expect(text).toContain("GUARD orca review-wait --page PAGE_ID");
+    expect(text).toContain("GUARD auto repair-record --issue ISSUE --owner OWNER --run RUN_ID --pr PR --head REVIEWED_HEAD --findings-file FILE");
+    expect(text).toContain("check the successful receipt's `pr` and `headSha`");
+    expect(text).toContain("`review-read` returns only the latest assistant reply");
+    expect(text).toContain("**insufficient to verify dispute history**");
+    expect(text).toContain("inspect the complete exchange");
+    expect(text).toContain("If the full history is unavailable or cannot be matched to the recorded chat, treat the review as **not approved**");
+  });
+
+  it("retains per-chat deletion identity and uses native recovery after a rejected terminal handoff", () => {
+    const text = delegated();
+    expect(text).toContain("`worker_done` is terminal evidence submission, never coordinator acceptance");
+    expect(text).toContain("Every created review chat (including earlier rounds)");
+    expect(text).toContain("exact first-message text and coordinator-accessible message-file path");
+    expect(text).toContain("coordinator-owned recovery storage outside the worker worktree");
+    expect(text).toContain("terminal `worker_done` dispatch cannot be treated as a live worker");
+    expect(text).toContain("../SKILL.md#supervision-and-recovery");
+    expect(text).toContain("same-Task `--retry-of` / `--retry-request`");
+    expect(text).toContain("Revalidate the live lease and dispatch binding");
+    expect(text).toContain("**before worker-worktree cleanup**");
+    expect(text).toContain("GUARD orca review-delete --page PAGE_ID --message-file MESSAGE_FILE");
+    expect(text).toContain("Only after verified deletion use `GUARD auto review-forget");
+  });
+
+  it("surfaces reviewer disputes and does not let the worker steer the verdict", () => {
+    const text = delegated();
+    expect(text).toMatch(/Every disagreement is reported to the coordinator verbatim/);
+    expect(text).toMatch(/did not explicitly retract or downgrade stays open/);
+    expect(text).toMatch(/must not steer the verdict/);
+  });
+
+  it("accepts a verdict only from the recorded chat on the exact head", () => {
+    const text = delegated();
+    expect(text).toMatch(/reviewed SHA == final head == PR head/);
+    expect(text).toMatch(/from the recorded chat itself/);
+    expect(text).toMatch(/Any later commit invalidates the review/);
+    expect(text).toMatch(/treat it as \*\*not approved\*\*/);
+    const accept = text.indexOf("## What the coordinator does with it");
+    expect(accept).toBeGreaterThan(-1);
+    expect(text.indexOf("auth-check --phase merge", accept)).toBeLessThan(text.indexOf("verify-head", accept));
+    expect(text).toContain("--match-head-commit");
+  });
+
+  it("names no specific repository or product", () => {
+    expect(delegated()).not.toMatch(/hockey|campsty|camping|region-viken|niclas-lindgren\/(?!orca)|RVV|season/i);
+  });
+});
+
 describe("orca-flow safety", () => {
   it("fails preflight before claim when native Orca, adapter, browser or GitHub is unavailable", () => {
     expect(flow).toMatch(/Fail closed before claiming anything/);
