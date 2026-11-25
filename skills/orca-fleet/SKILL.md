@@ -54,6 +54,18 @@ For each issue create one durable Task. Express real dependencies with `--deps`;
 
 Record the run and task ids. The coordinator session remains the sole approver and merger. By default it also runs every review; see [delegated review](references/delegated-review.md) for the opt-in mode where workers run the review/repair rounds and the coordinator only decides.
 
+## Select worker agent
+
+Every worker launch uses the Pi harness by default: pass `--agent pi` explicitly. This package's guard adapters are designed for the Pi harness.
+
+**User override:** To use a different Orca agent (e.g., `claude`, `codex`, `opencode`), set `WORKER_AGENT` before invoking the skill. The native orchestration skill says to ask the user when the agent isn't obvious from context. Record the choice:
+
+```bash
+WORKER_AGENT="${WORKER_AGENT:-pi}"
+```
+
+Default remains `pi` for backward compatibility.
+
 ## Claim before launch
 
 Create stable coordinator identities:
@@ -98,6 +110,16 @@ provisional durable binding **before** native Orca can start the worker:
      --retry-request "$START_REQUEST" \
      --json
    ```
+
+**With user override** (if `WORKER_AGENT` is set to a different agent):
+   ```bash
+   "$ORCA" orchestration worker-start \
+     --task "$TASK_ID" \
+     --worktree "$WORKTREE_SELECTOR" \
+     --agent "$WORKER_AGENT" \
+     --retry-request "$START_REQUEST" \
+     --json
+   ```
 4. Finalize the same binding with the confirmed dispatch receipt:
    ```text
    GUARD auto bind-native --issue ISSUE --owner OWNER --run RUN_ID --native-run NATIVE_RUN --task TASK_ID --dispatch DISPATCH_ID --worktree WORKTREE_SELECTOR
@@ -129,7 +151,7 @@ Do not infer failure from silence. An unverifiable worker is still potentially a
 - After three failed starts, the native circuit breaker requires explicit user direction before reopening work.
 - Use `worker-abandon` or `worker-release` only when the native contract authorizes it; never delete evidence to make a slot appear free.
 
-For a replacement, first prove the old dispatch terminal and unbind it exactly. While the lease is still live, create and bind the new `pending:START_REQUEST` before calling `worker-start --agent pi --retry-of OLD_DISPATCH --retry-request START_REQUEST`; finalize the binding with the new receipt. Ambiguity means leave the applicable old or provisional binding intact and stop.
+For a replacement, first prove the old dispatch terminal and unbind it exactly. While the lease is still live, create and bind the new `pending:START_REQUEST` before calling `worker-start --agent pi --retry-of OLD_DISPATCH --retry-request START_REQUEST` (or `--agent "$WORKER_AGENT"` with user override); finalize the binding with the new receipt. Ambiguity means leave the applicable old or provisional binding intact and stop.
 
 ## Resuming after a lost coordinator or worker
 

@@ -36,7 +36,19 @@ Never use `npm run auto`, `npm run orca`, `npx orca-orchestrator`, or a reposito
 
 Every worker launch and retry uses the Pi harness: pass `--agent pi` explicitly, regardless of the coordinator's harness. The harness is separate from the model/provider: add `--model provider/id` only when the user has selected a model; otherwise use Pi's configured model. Quota or provider failures do not authorize a harness switch. If Pi is unavailable, stop and report the blocker rather than falling back to Claude Code, Codex, or another harness.
 
-Confirm the dispatch receipt identifies Pi before handing work to it. Before reopening a settled worker with `send`, check its harness too: a follow-up reuses that worker's harness. To switch an existing worker in flight or continue work left by a non-Pi worker, read [harness migration](references/harness-migration.md) before stopping, retrying, or reopening anything. It covers confirmed exit, inherited edits, guarded binding replacement, same-Task retry, and completed-task follow-ups.
+**User override:** To use a different Orca agent (e.g., `claude`, `codex`, `opencode`), set `WORKER_AGENT` before invoking the skill. The native orchestration skill says to ask the user when the agent isn't obvious from context. Record the choice:
+
+```bash
+WORKER_AGENT="${WORKER_AGENT:-pi}"
+```
+
+Then use the variable in worker launches:
+
+```bash
+"$ORCA" orchestration worker-start --task "$TASK_ID" --worktree "$WORKTREE_SELECTOR" --agent "$WORKER_AGENT" ...
+```
+
+Default remains `pi` for backward compatibility with this package's guard adapters. Confirm the dispatch receipt identifies the chosen agent before handing work to it. Before reopening a settled worker with `send`, check its harness too: a follow-up reuses that worker's harness. To switch an existing worker in flight or continue work left by a non-Pi worker, read [harness migration](references/harness-migration.md) before stopping, retrying, or reopening anything. It covers confirmed exit, inherited edits, guarded binding replacement, same-Task retry, and completed-task follow-ups.
 
 For provider quota/rate-limit/availability failures in an existing Pi session, read [live model selection](references/model-control.md). Check native Orca capability first; use only the missing Pi control seam, an explicit user-approved model order, and a settled worker. Lifecycle and recovery remain native.
 
@@ -113,8 +125,8 @@ Use this when an issue already has a lease row, worktree, branch, worker or PR: 
    Founder approvals given to the old session are **not** inherited; ask again.
 3. Follow the recommendation:
    - `ATTACH_LIVE_WORKER`: do not start another worker. Bind to the old native Run with `"$ORCA" orchestration run-use --id NATIVE_RUN` so its mail reaches you (verified: a `worker_done` from a dead coordinator's worker is readable by a newly bound coordinator), then `worker-show` and, for a Pi worker, `send --to dispatch:ID` to brief it. For a non-Pi worker follow the harness migration procedure instead of reopening it. `send` to a finished worker reopens it as a follow-up Task.
-   - `RESTART_WORKER_ON_SAME_TASK`: unbind the exact dead dispatch, bind `pending:REQ`, then `worker-start --task TASK --retry-of DISPATCH --worktree id:WORKTREE --agent pi --retry-request REQ`, as in `orca-fleet`. This is Orca's retry path, not a second one: after Orca's breaker trips, only the user reopens the Task.
-   - `LAUNCH_WORKER_IN_EXISTING_WORKTREE`: `worker-start --spec ... --worktree id:WORKTREE --agent pi`, with the `specPreface` lines from the report so the worker continues the existing commits and uncommitted work instead of restarting. Do not use `new-child`.
+   - `RESTART_WORKER_ON_SAME_TASK`: unbind the exact dead dispatch, bind `pending:REQ`, then `worker-start --task TASK --retry-of DISPATCH --worktree id:WORKTREE --agent "$WORKER_AGENT" --retry-request REQ`, as in `orca-fleet`. This is Orca's retry path, not a second one: after Orca's breaker trips, only the user reopens the Task.
+   - `LAUNCH_WORKER_IN_EXISTING_WORKTREE`: `worker-start --spec ... --worktree id:WORKTREE --agent "$WORKER_AGENT"`, with the `specPreface` lines from the report so the worker continues the existing commits and uncommitted work instead of restarting. Do not use `new-child`.
    - `RECREATE_WORKTREE_FOR_BRANCH`: the branch has no registered worktree. Pass `--branch BRANCH --base-branch BRANCH`: verified on Orca 1.4, `--branch` alone creates a **new** branch from the default base (often suffixed `-2`) and leaves the existing commits behind. Confirm `result.worktree.branch` and its head before working; stop on a suffixed name.
    - `CLEANUP`: a PR is merged; go to cleanup.
 4. Before leaving, hand a live run to the next coordinator with `GUARD auto handover`, not by letting the lease lapse.
